@@ -1201,9 +1201,30 @@ namespace WpfEGridApp
                                     var path = PathFinder.FindShortestPath(startCell, endCell, allCells, _mainWindow.HasHorizontalNeighbor);
                                     if (path != null && path.Count > 0)
                                     {
-                                        double baseDistance = PathFinder.CalculateDistance(path, false, _mainWindow.HasHorizontalNeighbor);
-                                        double connectionDistance = GetConnectionDistance(cellB) + GetConnectionDistance(cellC);
-                                        double totalDistance = baseDistance + connectionDistance;
+                                        // Beregn path-avstand (kun mellom grid-punkter) - IKKE RØRT
+                                        double pathDistance = 0;
+                                        for (int i = 1; i < path.Count - 1; i++)
+                                            pathDistance += _mainWindow.HasHorizontalNeighbor(path[i].Row, path[i].Col) ? 100 : 50;
+
+                                        // Start punkt (A) avstand
+                                        double startDistance = 0;
+                                        if (mappingA.GridRow == -1) // Motor
+                                            startDistance = 500;
+                                        else if (mappingA.GridRow == -2) // Door  
+                                            startDistance = 1000;
+                                        else
+                                            startDistance = 100; // Vanlig celle
+
+                                        // Slutt punkt (B) avstand
+                                        double endDistance = 0;
+                                        if (mappingB.GridRow == -1) // Motor
+                                            endDistance = 500; // Motor som B-punkt = 500
+                                        else if (mappingB.GridRow == -2) // Door
+                                            endDistance = 1000; // Door som B-punkt = 1000
+                                        else
+                                            endDistance = 200; // Vanlig celle som B-punkt = 200
+
+                                        double totalDistance = pathDistance + startDistance + endDistance;
 
                                         if (totalDistance > 0)
                                         {
