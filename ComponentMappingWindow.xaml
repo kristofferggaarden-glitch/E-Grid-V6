@@ -1,0 +1,224 @@
+﻿<!-- ComponentMappingWindow.xaml -->
+<Window x:Class="WpfEGridApp.ComponentMappingWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Komponent Mapping" Height="700" Width="1000"
+        MinHeight="600" MinWidth="800"
+        Background="#FF1A2526"
+        FontFamily="Inter, Segoe UI" FontSize="14">
+
+    <Window.Resources>
+        <!-- Samme styles som tidligere vinduer -->
+        <SolidColorBrush x:Key="PrimaryBrush" Color="#FF0078D4"/>
+        <SolidColorBrush x:Key="AccentBrush" Color="#FF00B294"/>
+        <SolidColorBrush x:Key="TextBrush" Color="#FFE6ECEC"/>
+        <SolidColorBrush x:Key="PanelBackground" Color="#2A3B3C"/>
+
+        <Style TargetType="Button" x:Key="RoundedButtonStyle">
+            <Setter Property="Background" Value="{StaticResource AccentBrush}"/>
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+            <Setter Property="FontWeight" Value="Medium"/>
+            <Setter Property="Padding" Value="12,8"/>
+            <Setter Property="Margin" Value="8"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                CornerRadius="8">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#FF00A88F"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="TextBox">
+            <Setter Property="Padding" Value="8,6"/>
+            <Setter Property="Margin" Value="4"/>
+            <Setter Property="Background" Value="#FF2A3B3C"/>
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+            <Setter Property="BorderBrush" Value="#FF4A5A5B"/>
+            <Setter Property="BorderThickness" Value="1"/>
+        </Style>
+
+        <Style TargetType="Label">
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+            <Setter Property="Margin" Value="4"/>
+        </Style>
+    </Window.Resources>
+
+    <Border Background="{StaticResource PanelBackground}" CornerRadius="16" Margin="20" Padding="20">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="2*"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Header -->
+            <StackPanel Grid.Row="0" Grid.ColumnSpan="2" Margin="0,0,0,20">
+                <TextBlock Text="Komponent Mapping" FontSize="20" FontWeight="Bold" 
+                          Foreground="{StaticResource TextBrush}" Margin="0,0,0,10"/>
+                <TextBlock Text="Map Excel-referanser til grid-posisjoner basert på det faktiske oppsettet. Du kan også mappe til Motor/Door punkter." 
+                          FontSize="12" Foreground="#FFB0B8B8" TextWrapping="Wrap"/>
+            </StackPanel>
+
+            <!-- Eksisterende mappings -->
+            <Border Grid.Row="1" Grid.Column="0" Background="#FF1A2526" CornerRadius="10" 
+                    Padding="15" Margin="0,0,10,0">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <TextBlock Text="Eksisterende Mappings" FontWeight="Bold" 
+                              Foreground="{StaticResource TextBrush}" Margin="0,0,0,10" Grid.Row="0"/>
+                    <Button Content="Slett alle mappings" 
+                            Click="ClearAllMappings_Click" 
+                            Style="{StaticResource RoundedButtonStyle}"
+                            Background="#FFFF4444"
+                            ToolTip="Slett alle eksisterende mappings" Grid.Row="1"/>
+                    <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+                        <ItemsControl x:Name="MappingsList">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="#FF2A3B3C" CornerRadius="6" 
+                                           Margin="0,2" Padding="10,8">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="100"/>
+                                                <ColumnDefinition Width="120"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="60"/>
+                                            </Grid.ColumnDefinitions>
+
+                                            <TextBlock Grid.Column="0" Text="{Binding ExcelReference}" 
+                                                      FontWeight="Bold" Foreground="{StaticResource AccentBrush}"
+                                                      VerticalAlignment="Center"/>
+                                            <TextBlock Grid.Column="1" 
+                                                      Text="{Binding GridPosition}" 
+                                                      Foreground="{StaticResource TextBrush}"
+                                                      VerticalAlignment="Center"/>
+                                            <Button Grid.Column="3" Content="Slett" Width="50" Height="25"
+                                                   Style="{StaticResource RoundedButtonStyle}"
+                                                   Background="#FFFF4444"
+                                                   Click="DeleteMapping_Click"
+                                                   Tag="{Binding ExcelReference}"/>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </Grid>
+            </Border>
+
+            <!-- Control panel -->
+            <StackPanel Grid.Row="1" Grid.Column="1" Margin="0,0,0,0">
+                <TextBlock Text="Legg til ny mapping:" FontWeight="Bold" 
+                          Foreground="{StaticResource TextBrush}" Margin="0,0,0,15"/>
+
+                <Label Content="Excel referanse:"/>
+                <TextBox x:Name="NewExcelReference" 
+                         ToolTip="F1, X2:41, K3, etc."/>
+
+                <Button Content="Start interaktiv mapping" 
+                        Click="StartInteractiveMapping_Click" 
+                        Style="{StaticResource RoundedButtonStyle}"
+                        Margin="8,20,8,8"
+                        ToolTip="Klikk på grid-posisjon (T=oversiden, B=undersiden)"/>
+
+                <Separator Margin="0,10" Background="#FF4A5A5B"/>
+
+                <TextBlock Text="Spesifikk mapping:" FontWeight="Bold" 
+                          Foreground="{StaticResource TextBrush}" Margin="0,0,0,10"/>
+
+                <Button Content="Start spesifikk mapping" 
+                        Click="StartSpecificMapping_Click" 
+                        Style="{StaticResource RoundedButtonStyle}"
+                        Background="#FF9932CC"
+                        ToolTip="Map hver unik Excel-celle individuelt"/>
+
+                <Button Content="Avbryt spesifikk mapping" 
+                        Click="CancelSpecificMapping_Click" 
+                        Style="{StaticResource RoundedButtonStyle}"
+                        Background="#FFFF4444"
+                        ToolTip="Avbryt pågående spesifikk mapping"/>
+
+                <Separator Margin="0,15" Background="#FF4A5A5B"/>
+
+                <TextBlock Text="Automatisk søk:" FontWeight="Bold" 
+                          Foreground="{StaticResource TextBrush}" Margin="0,0,0,10"/>
+
+                <Button Content="Finn umappede referanser" 
+                        Click="FindUnmappedReferences_Click" 
+                        Style="{StaticResource RoundedButtonStyle}"
+                        Background="{StaticResource PrimaryBrush}"
+                        ToolTip="Søk gjennom Excel for referanser som ikke er mappet"/>
+
+                <ListView x:Name="UnmappedReferencesList" Height="150" Margin="8"
+                          Background="#FF2A3B3C" Foreground="{StaticResource TextBrush}"
+                          BorderBrush="#FF4A5A5B">
+                    <ListView.View>
+                        <GridView>
+                            <GridViewColumn Width="30">
+                                <GridViewColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <CheckBox IsChecked="{Binding IsSelected}"/>
+                                    </DataTemplate>
+                                </GridViewColumn.CellTemplate>
+                            </GridViewColumn>
+                            <GridViewColumn Header="Referanse" Width="200" DisplayMemberBinding="{Binding Reference}"/>
+                        </GridView>
+                    </ListView.View>
+                </ListView>
+
+                <Button Content="Start mapping av valgte" 
+                        Click="StartSelectedMapping_Click" 
+                        Style="{StaticResource RoundedButtonStyle}"
+                        Background="{StaticResource AccentBrush}"
+                        ToolTip="Start sekvensiell mapping av valgte referanser"/>
+            </StackPanel>
+
+            <!-- Status -->
+            <Border Grid.Row="2" Grid.ColumnSpan="2" Background="#FF1A2526" 
+                    CornerRadius="8" Padding="10" Margin="0,10,0,0">
+                <TextBlock x:Name="StatusText" Text="Klar" 
+                          Foreground="{StaticResource TextBrush}"/>
+            </Border>
+
+            <!-- Buttons -->
+            <StackPanel Grid.Row="3" Grid.ColumnSpan="2" Orientation="Horizontal" 
+                       HorizontalAlignment="Right" Margin="0,10,0,0">
+                <Button Content="Prosesser alle ledninger" 
+                        Click="ProcessAllWithMappings_Click" 
+                        Style="{StaticResource RoundedButtonStyle}"
+                        Background="{StaticResource AccentBrush}"
+                        ToolTip="Bruk mappings til å automatisk måle alle ledninger"/>
+                <Button Content="Test prosessering" 
+                        Click="TestProcessing_Click" 
+                        Style="{StaticResource RoundedButtonStyle}"
+                        Background="#FFFF8C00"
+                        ToolTip="Test prosessering uten å skrive til Excel"/>
+                <Button Content="Lukk" Click="Close_Click" 
+                        Style="{StaticResource RoundedButtonStyle}"
+                        Background="#FF666666"/>
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>
