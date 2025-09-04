@@ -592,7 +592,19 @@ namespace WpfEGridApp
             }
 
             bool endsInSpecial = endPoint is SpecialPoint;
-            double totalDistance = PathFinder.CalculateDistance(path, endsInSpecial, HasHorizontalNeighbor) + extraDistance;
+            // Calculate the base distance using the same logic as PathFinder.  This
+            // includes a fixed 100 mm start connection and, if the end point is not
+            // a special point, a 200 mm end connection.  The extraDistance
+            // variable above compensates for the correct start/end contributions
+            // (for example, adding 900 mm for a door as start instead of only
+            // 100 mm).  In addition to this we now always add 50 mm on the
+            // last cell regardless of the endpoint type so that the end
+            // connection contributes 250 mm for normal cells (200 mm + 50 mm) and
+            // increases motor/door ends by the same amount.  This keeps the
+            // manual measurement in sync with the automatic processing logic.
+            double totalDistance = PathFinder.CalculateDistance(path, endsInSpecial, HasHorizontalNeighbor)
+                                 + extraDistance
+                                 + 50; // Always add 50 mm for the last cell
             HighlightPath(path);
 
             if (startPoint is SpecialPoint sp1 && endPoint is SpecialPoint sp2)
@@ -1227,30 +1239,37 @@ namespace WpfEGridApp
                                         for (int i = 1; i < path.Count - 1; i++)
                                             pathDistance += _mainWindow.HasHorizontalNeighbor(path[i].Row, path[i].Col) ? 100 : 50;
 
-                                        // Start punkt (A) avstand
-                                        // For å sikre at distansen blir symmetrisk når
-                                        // komponenten er start- eller sluttpunkt, bruker vi 200 mm
-                                        // for vanlige celler som start, 400 mm for motor og
-                                        // 900 mm for dør. CalculateDistance bidrar med 100 mm
-                                        // for startkoblingen, så summen blir 200/500/1000.
-                                        double startDistance = 0;
+                                        // Start point (A) contribution.
+                                        // The startDistance must include the 100 mm start
+                                        // connection used by PathFinder.CalculateDistance plus the
+                                        // appropriate extra contribution (400 mm for motors,
+                                        // 900 mm for doors, 100 mm for regular cells).  This
+                                        // results in 200 mm for a normal cell, 500 mm for a
+                                        // motor and 1000 mm for a door when combined with the
+                                        // internal path distances.
+                                        double startDistance;
                                         if (mappingA.GridRow == -1) // Motor
-                                            startDistance = 400;
+                                            startDistance = 500;
                                         else if (mappingA.GridRow == -2) // Door
-                                            startDistance = 900;
+                                            startDistance = 1000;
                                         else
-                                            startDistance = 200; // Vanlig celle
+                                            startDistance = 200; // Normal cell
 
-                                        // Slutt punkt (B) avstand
-                                        double endDistance = 0;
+                                        // End point (B) contribution.
+                                        // For normal cells we use 200 mm, for motors 500 mm and
+                                        // for doors 1000 mm.  A constant 50 mm is later added
+                                        // regardless of type to ensure the last cell always
+                                        // contributes an extra 50 mm.
+                                        double endDistance;
                                         if (mappingB.GridRow == -1) // Motor
-                                            endDistance = 500; // Motor som B-punkt = 500
+                                            endDistance = 500;
                                         else if (mappingB.GridRow == -2) // Door
-                                            endDistance = 1000; // Door som B-punkt = 1000
+                                            endDistance = 1000;
                                         else
-                                            endDistance = 200; // Vanlig celle som B-punkt = 200
+                                            endDistance = 200; // Normal cell
 
-                                        double totalDistance = pathDistance + startDistance + endDistance;
+                                        // Always add 50 mm for the last cell regardless of its type
+                                        double totalDistance = pathDistance + startDistance + endDistance + 50;
 
                                         if (totalDistance > 0)
                                         {
@@ -1448,7 +1467,11 @@ namespace WpfEGridApp
                                     double baseDistance = PathFinder.CalculateDistance(path, false, _mainWindow.HasHorizontalNeighbor);
                                     double connectionDistanceA = GetConnectionDistance(cellB, mappingA);
                                     double connectionDistanceB = GetConnectionDistance(cellC, mappingB);
-                                    double totalDistance = baseDistance + connectionDistanceA + connectionDistanceB;
+                                    // Include an additional 50 mm for the last cell to mirror the
+                                    // logic used in the main measurement routines.  This ensures
+                                    // that the test processing output matches the values
+                                    // generated during manual and automatic measurements.
+                                    double totalDistance = baseDistance + connectionDistanceA + connectionDistanceB + 50;
                                     results.Add($"  BASE AVSTAND: {baseDistance:F2} mm");
                                     results.Add($"  TILKOBLINGS A: {connectionDistanceA:F2} mm");
                                     results.Add($"  TILKOBLINGS B: {connectionDistanceB:F2} mm");
