@@ -212,14 +212,15 @@
             </Setter>
         </Style>
 
-        <!-- Style for Selected File TextBlock -->
-        <Style TargetType="TextBlock" x:Key="SelectedFileStyle">
+        <!-- Style for Excel File Path Text -->
+        <Style TargetType="TextBlock" x:Key="ExcelFilePathStyle">
             <Setter Property="Foreground" Value="#FFB0B8B8"/>
-            <Setter Property="FontSize" Value="12"/>
-            <Setter Property="Margin" Value="8"/>
-            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="FontSize" Value="10"/>
+            <Setter Property="VerticalAlignment" Value="Bottom"/>
+            <Setter Property="HorizontalAlignment" Value="Right"/>
             <Setter Property="TextWrapping" Value="Wrap"/>
-            <Setter Property="MaxWidth" Value="300"/>
+            <Setter Property="MaxWidth" Value="400"/>
+            <Setter Property="Margin" Value="0,0,10,10"/>
         </Style>
     </Window.Resources>
 
@@ -245,7 +246,6 @@
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="200"/>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                     <!-- For ResultText -->
@@ -285,11 +285,7 @@
                         Background="{StaticResource AccentBrush}"
                         ToolTip="Automatically measure all connections using component mappings" Grid.Column="10" Width="160"/>
 
-                <TextBlock x:Name="SelectedFileText" Text="{Binding SelectedExcelFile}" 
-                          Style="{StaticResource SelectedFileStyle}" 
-                          ToolTip="Currently selected Excel file for logging" Grid.Column="11"/>
-
-                <TextBlock x:Name="ResultText" Style="{StaticResource ResultTextStyle}" Grid.Column="13" 
+                <TextBlock x:Name="ResultText" Style="{StaticResource ResultTextStyle}" Grid.Column="12" 
                           HorizontalAlignment="Right" Margin="0,0,15,0" FontSize="14"/>
             </Grid>
 
@@ -302,10 +298,22 @@
                 </Border>
             </ScrollViewer>
 
-            <!-- Results -->
-            <StackPanel Grid.Row="2" Margin="0,20,0,0" Orientation="Vertical" HorizontalAlignment="Left">
-                <TextBlock x:Name="ExcelText" Text="{Binding ExcelDisplayText}" Style="{StaticResource ExcelTextStyle}"/>
-            </StackPanel>
+            <!-- Results and Excel file path display -->
+            <Grid Grid.Row="2" Margin="0,20,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0" Orientation="Vertical" HorizontalAlignment="Left">
+                    <TextBlock x:Name="ExcelText" Text="{Binding ExcelDisplayText}" Style="{StaticResource ExcelTextStyle}"/>
+                </StackPanel>
+
+                <TextBlock x:Name="ExcelFilePathText" Grid.Column="1" 
+                          Text="{Binding SelectedExcelFile}" 
+                          Style="{StaticResource ExcelFilePathStyle}"
+                          ToolTip="Currently selected Excel file"/>
+            </Grid>
         </Grid>
     </Border>
 </Window>

@@ -786,45 +786,6 @@ namespace WpfEGridApp
             }
         }
 
-        private Cell GetCellFromMapping(ComponentMapping mapping)
-        {
-            int row = mapping.GridRow;
-            int col = mapping.GridColumn;
-
-            // Direct match in allCells
-            if (allCells.TryGetValue((row, col), out var cell))
-            {
-                return cell;
-            }
-
-            // Find nearest cell in same column
-            foreach (var c in allCells.Values)
-            {
-                if (c.Col == col && Math.Abs(c.Row - row) <= 1)
-                {
-                    return c;
-                }
-            }
-
-            return null;
-        }
-
-        private bool IsSpecialPoint(ComponentMapping mapping)
-        {
-            // Check if mapping corresponds to a special point (Door or Motor)
-            foreach (var dp in doorPoints)
-            {
-                if (dp.GlobalRow == mapping.GridRow && dp.GlobalCol == mapping.GridColumn)
-                    return true;
-            }
-            foreach (var mp in motorPoints)
-            {
-                if (mp.GlobalRow == mapping.GridRow && mp.GlobalCol == mapping.GridColumn)
-                    return true;
-            }
-            return false;
-        }
-
         public void UpdateExcelDisplayText()
         {
             if (string.IsNullOrEmpty(SelectedExcelFile) || worksheet == null)
@@ -1002,7 +963,7 @@ namespace WpfEGridApp
                 SelectedExcelFile = openFileDialog.FileName;
                 if (InitializeExcel(SelectedExcelFile))
                 {
-                    MessageBox.Show($"Excel file '{SelectedExcelFile}' selected and opened.", "Success", MessageBoxButton.OK, MessageBoxImage.Information);
+                    // Fjernet success melding som ønsket
                     _currentExcelRow = 2;
                     _componentMappingManager = new ComponentMappingManager(this, SelectedExcelFile);
                     UpdateExcelDisplayText();
@@ -1173,7 +1134,7 @@ namespace WpfEGridApp
         }
     }
 
-    // New class for processing Excel connections automatically
+    // BEHOLDT ORIGINAL ExcelConnectionProcessor som fungerte
     public class ExcelConnectionProcessor
     {
         private readonly MainWindow _mainWindow;
@@ -1213,16 +1174,20 @@ namespace WpfEGridApp
                         try { cellC = _mainWindow.worksheet.Cells[row, 3].Value?.ToString() ?? ""; } catch { }
                         try { cellA = _mainWindow.worksheet.Cells[row, 1].Value; } catch { }
 
-                        // Skip if already has measurement
-                        if (cellA != null && !string.IsNullOrEmpty(cellA.ToString())) continue;
+                        // Skip if already has measurement and we're not reprocessing
+                        if (cellA != null && !string.IsNullOrEmpty(cellA.ToString()) &&
+                            double.TryParse(cellA.ToString(), out _))
+                            continue;
 
-                        // Skip if no points
-                        if (string.IsNullOrWhiteSpace(cellB) && string.IsNullOrWhiteSpace(cellC)) continue;
+                        // Skip if no points to connect
+                        if (string.IsNullOrWhiteSpace(cellB) && string.IsNullOrWhiteSpace(cellC))
+                            continue;
 
-                        // Find mappings
+                        // IMPORTANT: Only process if BOTH sides have mappings
                         var mappingA = _mappingManager.GetMapping(cellB);
                         var mappingB = _mappingManager.GetMapping(cellC);
 
+                        // Only continue if BOTH mappings are found
                         if (mappingA != null && mappingB != null)
                         {
                             var posA = GetGridPositionFromMapping(mappingA);
@@ -1264,6 +1229,7 @@ namespace WpfEGridApp
             return processedCount;
         }
 
+        // ORIGINAL GetGridPositionFromMapping som fungerte for B-mapping
         private (int Row, int Col)? GetGridPositionFromMapping(ComponentMapping mapping)
         {
             // Handle special points (Motors and Doors)
@@ -1281,7 +1247,7 @@ namespace WpfEGridApp
             }
             else
             {
-                // Handle bottom side mappings (negative rows)
+                // Handle bottom side mappings (negative rows) - DETTE FUNGERTE
                 if (mapping.GridRow < 0)
                 {
                     // Convert negative row back to positive for allCells lookup
@@ -1290,20 +1256,33 @@ namespace WpfEGridApp
                 }
                 else
                 {
-                    // Regular grid position (top side)
+                    // LAGT TIL: Bedre håndtering av top side (T) mappings
+                    // Hvis det er top-side mapping, bruk direkte koordinater
+                    // Hvis DefaultToBottom er true, prøv å finne cellen under
                     int adjustedRow = mapping.GridRow;
 
-                    // If DefaultToBottom is true, try to find the cell below
-                    if (mapping.DefaultToBottom)
+                    var allCells = _mainWindow.GetAllCells();
+
+                    // Prøv først den eksakte posisjonen
+                    if (allCells.ContainsKey((mapping.GridRow, mapping.GridColumn)))
                     {
-                        var allCells = _mainWindow.GetAllCells();
-                        if (allCells.ContainsKey((mapping.GridRow + 1, mapping.GridColumn)))
-                        {
-                            adjustedRow = mapping.GridRow + 1;
-                        }
+                        return (mapping.GridRow, mapping.GridColumn);
                     }
 
-                    return (adjustedRow, mapping.GridColumn);
+                    // Hvis DefaultToBottom, prøv raden under
+                    if (mapping.DefaultToBottom && allCells.ContainsKey((mapping.GridRow + 1, mapping.GridColumn)))
+                    {
+                        return (mapping.GridRow + 1, mapping.GridColumn);
+                    }
+
+                    // Prøv raden over
+                    if (allCells.ContainsKey((mapping.GridRow - 1, mapping.GridColumn)))
+                    {
+                        return (mapping.GridRow - 1, mapping.GridColumn);
+                    }
+
+                    // Returner original hvis intet annet fungerer
+                    return (mapping.GridRow, mapping.GridColumn);
                 }
             }
         }
@@ -1438,6 +1417,10 @@ namespace WpfEGridApp
                                 results.Add("  -> CELLER IKKE FUNNET I GRID");
                             }
                         }
+                    }
+                    else
+                    {
+                        results.Add("  -> IKKE BEGGE MAPPINGS FUNNET - HOPPER OVER");
                     }
                     results.Add("");
                 }

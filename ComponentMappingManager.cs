@@ -57,6 +57,9 @@ namespace WpfEGridApp
 
         public ComponentMapping GetMapping(string excelReference)
         {
+            if (string.IsNullOrWhiteSpace(excelReference))
+                return null;
+
             var cleanRef = excelReference.Trim();
 
             // Try exact match first
@@ -72,37 +75,47 @@ namespace WpfEGridApp
             }
 
             // Try prefix match for terminal blocks and other components
+            ComponentMapping bestMatch = null;
+            int bestMatchLength = 0;
+
             foreach (var kvp in _mappings)
             {
                 var mappingKey = kvp.Key;
                 var mappingValue = kvp.Value;
 
-                // If mapping key ends with : (terminal blocks)
+                // Terminal blocks - exact prefix match (X20: should match X20:41)
                 if (mappingKey.EndsWith(":") && cleanRef.StartsWith(mappingKey, StringComparison.OrdinalIgnoreCase))
                 {
-                    return new ComponentMapping
+                    if (mappingKey.Length > bestMatchLength)
                     {
-                        ExcelReference = mappingValue.ExcelReference,
-                        GridRow = mappingValue.GridRow,
-                        GridColumn = mappingValue.GridColumn,
-                        DefaultToBottom = mappingValue.DefaultToBottom
-                    };
+                        bestMatch = new ComponentMapping
+                        {
+                            ExcelReference = mappingValue.ExcelReference,
+                            GridRow = mappingValue.GridRow,
+                            GridColumn = mappingValue.GridColumn,
+                            DefaultToBottom = mappingValue.DefaultToBottom
+                        };
+                        bestMatchLength = mappingKey.Length;
+                    }
                 }
-
-                // General contains check
-                if (cleanRef.Contains(mappingKey, StringComparison.OrdinalIgnoreCase))
+                // Component match (A2 should match E01-A2-X4:10)
+                else if (cleanRef.Contains(mappingKey, StringComparison.OrdinalIgnoreCase))
                 {
-                    return new ComponentMapping
+                    if (mappingKey.Length > bestMatchLength)
                     {
-                        ExcelReference = mappingValue.ExcelReference,
-                        GridRow = mappingValue.GridRow,
-                        GridColumn = mappingValue.GridColumn,
-                        DefaultToBottom = mappingValue.DefaultToBottom
-                    };
+                        bestMatch = new ComponentMapping
+                        {
+                            ExcelReference = mappingValue.ExcelReference,
+                            GridRow = mappingValue.GridRow,
+                            GridColumn = mappingValue.GridColumn,
+                            DefaultToBottom = mappingValue.DefaultToBottom
+                        };
+                        bestMatchLength = mappingKey.Length;
+                    }
                 }
             }
 
-            return null;
+            return bestMatch;
         }
 
         public void AddMapping(string excelReference, int gridRow, int gridCol, bool defaultToBottom = false)
@@ -134,6 +147,9 @@ namespace WpfEGridApp
 
         public bool IsReferenceMapped(string reference)
         {
+            if (string.IsNullOrWhiteSpace(reference))
+                return false;
+
             var cleanRef = reference.Trim();
             return _mappings.ContainsKey(cleanRef) ||
                    _mappings.Keys.Any(key => key.EndsWith(":") && cleanRef.StartsWith(key, StringComparison.OrdinalIgnoreCase)) ||
