@@ -529,22 +529,41 @@ namespace WpfEGridApp
         {
             Cell startCell = null;
             Cell endCell = null;
+
+            // Ekstra distanse for å justere start- og sluttdistanser. Vi
+            // ønsker at motor/dør som startpunkt skal ha samme bidrag som når de
+            // er sluttpunkter (500 for motor, 1000 for dør), og at vanlige
+            // celler bidrar med 200 uavhengig av om de er start eller slutt.
+            // PathFinder.CalculateDistance legger til 100 for startpunkt og
+            // 200 for sluttpunkt (kun dersom slutt ikke er spesial). Vi
+            // kompenserer derfor her ved å justere med ±100 for spesial og
+            // vanlige celler slik at summene blir symmetriske.
             double extraDistance = 0;
 
             if (startPoint is SpecialPoint spStart)
             {
+                // Spesialpunkt som start: motor = 400, dør = 900. Når dette legges
+                // sammen med 100 som PathFinder.CalculateDistance gir for
+                // startkoblingen, får vi 500/1000 mm som ønsket.
                 if (allCells.TryGetValue((spStart.GlobalRow, spStart.GlobalCol), out startCell))
                 {
-                    extraDistance += spStart.Type == SpecialPointType.Door ? 1000 : 500;
+                    extraDistance += spStart.Type == SpecialPointType.Door ? 900 : 400;
                 }
             }
             else if (startPoint is Button btnStart)
             {
+                // Vanlig celle som start: legg til 100 mm ekstra slik at
+                // totale startkostnaden blir 200 mm (100 fra CalculateDistance + 100 her)
                 startCell = allCells.Values.FirstOrDefault(c => c.ButtonRef == btnStart);
+                if (startCell != null)
+                    extraDistance += 100;
             }
 
             if (endPoint is SpecialPoint spEnd)
             {
+                // Sluttpunkt som spesial: motor = 500, dør = 1000. Ingen justering
+                // nødvendig her da CalculateDistance ikke legger til 200 når
+                // sluttpunktet er spesial.
                 if (allCells.TryGetValue((spEnd.GlobalRow, spEnd.GlobalCol), out endCell))
                 {
                     extraDistance += spEnd.Type == SpecialPointType.Door ? 1000 : 500;
@@ -552,6 +571,8 @@ namespace WpfEGridApp
             }
             else if (endPoint is Button btnEnd)
             {
+                // Vanlig celle som slutt: ingen ekstra distanse her, da
+                // CalculateDistance allerede legger til 200 mm for sluttkoblingen.
                 endCell = allCells.Values.FirstOrDefault(c => c.ButtonRef == btnEnd);
             }
 
@@ -1207,13 +1228,18 @@ namespace WpfEGridApp
                                             pathDistance += _mainWindow.HasHorizontalNeighbor(path[i].Row, path[i].Col) ? 100 : 50;
 
                                         // Start punkt (A) avstand
+                                        // For å sikre at distansen blir symmetrisk når
+                                        // komponenten er start- eller sluttpunkt, bruker vi 200 mm
+                                        // for vanlige celler som start, 400 mm for motor og
+                                        // 900 mm for dør. CalculateDistance bidrar med 100 mm
+                                        // for startkoblingen, så summen blir 200/500/1000.
                                         double startDistance = 0;
                                         if (mappingA.GridRow == -1) // Motor
-                                            startDistance = 500;
-                                        else if (mappingA.GridRow == -2) // Door  
-                                            startDistance = 1000;
+                                            startDistance = 400;
+                                        else if (mappingA.GridRow == -2) // Door
+                                            startDistance = 900;
                                         else
-                                            startDistance = 100; // Vanlig celle
+                                            startDistance = 200; // Vanlig celle
 
                                         // Slutt punkt (B) avstand
                                         double endDistance = 0;
