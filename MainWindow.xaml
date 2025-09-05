@@ -317,6 +317,16 @@
                         ToolTip="Cancel current mapping operation" Grid.Column="11" Width="120"
                         Visibility="Collapsed"/>
 
+                <!-- New button to toggle cell removal mode.  When active you can click on
+                     regular cells to remove them from the grid.  This button lives in the
+                     star-sized column and toggles its label depending on whether the
+                     application is currently in removal mode. -->
+                <Button x:Name="RemoveCellsButton" Content="Fjern celler" Click="RemoveCellsButton_Click"
+                        Style="{StaticResource RoundedButtonStyle}"
+                        Background="#FFDD5555"
+                        ToolTip="Klikk for å fjerne vanlige celler fra gridet"
+                        Grid.Column="12" Width="120"/>
+
                 <TextBlock x:Name="ResultText" Style="{StaticResource ResultTextStyle}" Grid.Column="13" 
                           HorizontalAlignment="Right" Margin="0,0,15,0" FontSize="14"/>
             </Grid>

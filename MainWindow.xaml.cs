@@ -28,6 +28,11 @@ namespace WpfEGridApp
         private bool _isInMappingMode = false;
         private Action<string, string> _mappingCompletedCallback;
 
+        // Indicates whether the application is in cell removal mode.  When true
+        // regular cell clicks will remove the cell from the grid instead of
+        // initiating a measurement.  The RemoveCellsButton toggles this flag.
+        private bool _isRemovingCells = false;
+
         public int Sections
         {
             get => _sections;
@@ -387,6 +392,28 @@ namespace WpfEGridApp
         private void CellClick(object sender, RoutedEventArgs e)
         {
             var btn = sender as Button;
+
+            // If we are in removal mode, remove the clicked cell from the grid and
+            // internal cell dictionary.  Skip any measurement processing.
+            if (_isRemovingCells)
+            {
+                if (btn != null)
+                {
+                    // Locate the corresponding cell in the allCells dictionary
+                    var cellEntry = allCells.FirstOrDefault(kvp => kvp.Value.ButtonRef == btn);
+                    if (!cellEntry.Equals(default(KeyValuePair<(int globalRow, int globalCol), Cell>)))
+                    {
+                        // Remove the UI element from its parent grid
+                        if (btn.Parent is Grid parentGrid)
+                        {
+                            parentGrid.Children.Remove(btn);
+                        }
+                        // Remove from the dictionary so pathfinding no longer considers it
+                        allCells.Remove(cellEntry.Key);
+                    }
+                }
+                return;
+            }
             if (_lockedPointA != null)
             {
                 if (endPoint != null)
@@ -565,17 +592,27 @@ namespace WpfEGridApp
             bool endsInSpecial = endPoint is SpecialPoint;
             // Calculate the base distance using the same logic as PathFinder.  This
             // includes a fixed 100 mm start connection and, if the end point is not
-            // a special point, a 200 mm end connection.  The extraDistance
-            // variable above compensates for the correct start/end contributions
-            // (for example, adding 900 mm for a door as start instead of only
-            // 100 mm).  In addition to this we now always add 50 mm on the
-            // last cell regardless of the endpoint type so that the end
-            // connection contributes 250 mm for normal cells (200 mm + 50 mm) and
-            // increases motor/door ends by the same amount.  This keeps the
-            // manual measurement in sync with the automatic processing logic.
-            double totalDistance = PathFinder.CalculateDistance(path, endsInSpecial, HasHorizontalNeighbor)
-                                 + extraDistance
-                                 + 50; // Always add 50 mm for the last cell
+            // a special point, a 200 mm end connection.  For measurements
+            // between two regular cells we want the total to be exactly 100 mm
+            // (start) + path distance + 200 mm (end) and NOT include any extra
+            // compensation or constant.  For other combinations (involving motors
+            // or doors) we preserve the existing logic with extra adjustments and
+            // the additional 50 mm.
+            double baseDistance = PathFinder.CalculateDistance(path, endsInSpecial, HasHorizontalNeighbor);
+            double totalDistance;
+            bool startIsButton = startPoint is Button;
+            bool endIsButton = endPoint is Button;
+            if (startIsButton && endIsButton)
+            {
+                // Both points are regular cells: use only the base distance.
+                totalDistance = baseDistance;
+            }
+            else
+            {
+                // At least one point is a motor or door; use existing compensation and
+                // add the constant 50 mm as originally implemented.
+                totalDistance = baseDistance + extraDistance + 50;
+            }
             HighlightPath(path);
 
             if (startPoint is SpecialPoint sp1 && endPoint is SpecialPoint sp2)
@@ -756,6 +793,43 @@ namespace WpfEGridApp
         private void CancelMapping_Click(object sender, RoutedEventArgs e)
         {
             EndMappingMode();
+        }
+
+        /// <summary>
+        /// Toggle cell removal mode on or off.  When removal mode is active
+        /// clicking on a regular grid cell will remove it from the UI and
+        /// underlying data structure so it is no longer considered in
+        /// subsequent measurements.  Toggling the mode off restores normal
+        /// measurement behaviour.  The button's label is updated to reflect
+        /// the current state and a message is shown in the result text to
+        /// guide the user.
+        /// </summary>
+        private void RemoveCellsButton_Click(object sender, RoutedEventArgs e)
+        {
+            _isRemovingCells = !_isRemovingCells;
+            if (_isRemovingCells)
+            {
+                // Enter removal mode: update button text and inform user
+                if (RemoveCellsButton != null)
+                {
+                    RemoveCellsButton.Content = "Ferdig fjerning";
+                }
+                // Clear any current selection and locked points
+                startPoint = null;
+                endPoint = null;
+                ResultText.Text = "Klikk på cellene du vil fjerne.";
+            }
+            else
+            {
+                // Exit removal mode: restore button text and clear message
+                if (RemoveCellsButton != null)
+                {
+                    RemoveCellsButton.Content = "Fjern celler";
+                }
+                ResultText.Text = _lockedPointA != null ? $"Locked point A: {_lockedPointA.Type} {_lockedPointA.SectionIndex + 1}" : "";
+                // Reset any temporary highlights
+                ResetSelection();
+            }
         }
 
         private void AutomaticMeasureAll_Click(object sender, RoutedEventArgs e)
@@ -962,6 +1036,12 @@ namespace WpfEGridApp
             _lockedButton = null;
             _currentExcelRow = 2;
             BuildAllSections();
+            // Reset removal mode when rebuilding the grid to avoid stale state
+            _isRemovingCells = false;
+            if (RemoveCellsButton != null)
+            {
+                RemoveCellsButton.Content = "Fjern celler";
+            }
             UpdateExcelDisplayText();
         }
 
@@ -1220,37 +1300,49 @@ namespace WpfEGridApp
                                         for (int i = 1; i < path.Count - 1; i++)
                                             pathDistance += _mainWindow.HasHorizontalNeighbor(path[i].Row, path[i].Col) ? 100 : 50;
 
-                                        // Start point (A) contribution.
-                                        // The startDistance must include the 100 mm start
-                                        // connection used by PathFinder.CalculateDistance plus the
-                                        // appropriate extra contribution (400 mm for motors,
-                                        // 900 mm for doors, 100 mm for regular cells).  This
-                                        // results in 200 mm for a normal cell, 500 mm for a
-                                        // motor and 1000 mm for a door when combined with the
-                                        // internal path distances.
-                                        double startDistance;
-                                        if (mappingA.GridRow == -1) // Motor
-                                            startDistance = 500;
-                                        else if (mappingA.GridRow == -2) // Door
-                                            startDistance = 1000;
-                                        else
-                                            startDistance = 200; // Normal cell
+                                        // Determine whether both ends are regular cells (neither motor nor door).
+                                        bool aIsNormal = mappingA.GridRow != -1 && mappingA.GridRow != -2;
+                                        bool bIsNormal = mappingB.GridRow != -1 && mappingB.GridRow != -2;
+                                        double totalDistance;
 
-                                        // End point (B) contribution.
-                                        // For normal cells we use 200 mm, for motors 500 mm and
-                                        // for doors 1000 mm.  A constant 50 mm is later added
-                                        // regardless of type to ensure the last cell always
-                                        // contributes an extra 50 mm.
-                                        double endDistance;
-                                        if (mappingB.GridRow == -1) // Motor
-                                            endDistance = 500;
-                                        else if (mappingB.GridRow == -2) // Door
-                                            endDistance = 1000;
+                                        if (aIsNormal && bIsNormal)
+                                        {
+                                            // Both sides are regular cells: the start contributes 100 mm,
+                                            // the end contributes 200 mm, and there is no extra constant.
+                                            totalDistance = pathDistance + 100 + 200;
+                                        }
                                         else
-                                            endDistance = 200; // Normal cell
+                                        {
+                                            // Preserve existing logic for connections involving motors or doors.
+                                            // Start point (A) contribution.  The startDistance must include the
+                                            // 100 mm start connection used by the path finding plus the appropriate
+                                            // extra contribution (400 mm for motors, 900 mm for doors, 100 mm for
+                                            // regular cells).  This results in 200 mm for a normal cell, 500 mm
+                                            // for a motor and 1000 mm for a door when combined with the internal
+                                            // path distances.
+                                            double startDistance;
+                                            if (mappingA.GridRow == -1) // Motor
+                                                startDistance = 500;
+                                            else if (mappingA.GridRow == -2) // Door
+                                                startDistance = 1000;
+                                            else
+                                                startDistance = 200; // Normal cell
 
-                                        // Always add 50 mm for the last cell regardless of its type
-                                        double totalDistance = pathDistance + startDistance + endDistance + 50;
+                                            // End point (B) contribution.  For normal cells we use 200 mm,
+                                            // for motors 500 mm and for doors 1000 mm.  A constant 50 mm is
+                                            // later added regardless of type to ensure the last cell always
+                                            // contributes an extra 50 mm.
+                                            double endDistance;
+                                            if (mappingB.GridRow == -1) // Motor
+                                                endDistance = 500;
+                                            else if (mappingB.GridRow == -2) // Door
+                                                endDistance = 1000;
+                                            else
+                                                endDistance = 200; // Normal cell
+
+                                            // Always add 50 mm for the last cell regardless of its type
+                                            totalDistance = pathDistance + startDistance + endDistance + 50;
+                                        }
 
                                         if (totalDistance > 0)
                                         {
