@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
+using Microsoft.Win32;
 using Excel = Microsoft.Office.Interop.Excel;
 
 namespace WpfEGridApp
@@ -17,6 +18,10 @@ namespace WpfEGridApp
         private ComponentMappingManager _mappingManager;
         public ObservableCollection<MappingDisplayItem> MappingDisplayItems { get; set; }
         public ObservableCollection<UnmappedReferenceItem> UnmappedReferences { get; set; }
+
+        private Queue<string> _specificMappingQueue;
+        private bool _isInSpecificMappingMode = false;
+        private string _originalSearchText = "";
 
         public ComponentMappingWindow(MainWindow mainWindow, ComponentMappingManager mappingManager)
         {
@@ -31,6 +36,8 @@ namespace WpfEGridApp
             UnmappedReferencesList.ItemsSource = UnmappedReferences;
 
             LoadExistingMappings();
+            UpdateStatistics();
+            UpdateProgress();
             UpdateStatus("Component mapping vindu åpnet");
         }
 
@@ -39,7 +46,17 @@ namespace WpfEGridApp
             MappingDisplayItems.Clear();
             var mappings = _mappingManager.GetAllMappings();
 
-            foreach (var mapping in mappings)
+            var filteredMappings = mappings;
+
+            // Apply search filter if search text exists
+            if (!string.IsNullOrWhiteSpace(SearchMappingsBox?.Text))
+            {
+                var searchText = SearchMappingsBox.Text.ToLower();
+                filteredMappings = mappings.Where(m =>
+                    m.ExcelReference.ToLower().Contains(searchText)).ToList();
+            }
+
+            foreach (var mapping in filteredMappings)
             {
                 string position;
                 if (mapping.GridRow == -1)
@@ -66,13 +83,63 @@ namespace WpfEGridApp
                 });
             }
 
-            UpdateStatus($"Lastet {mappings.Count} eksisterende mappings");
+            UpdateStatistics();
+        }
+
+        private void UpdateStatistics()
+        {
+            var allMappings = _mappingManager.GetAllMappings();
+            var componentMappings = allMappings.Where(m => m.GridRow >= 0).Count();
+            var specialMappings = allMappings.Where(m => m.GridRow < 0).Count();
+
+            TotalMappingsCount.Text = allMappings.Count.ToString();
+            ComponentMappingsCount.Text = componentMappings.ToString();
+            SpecialMappingsCount.Text = specialMappings.ToString();
+        }
+
+        private void UpdateProgress()
+        {
+            try
+            {
+                if (_mainWindow.worksheet == null)
+                {
+                    MappingProgressBar.Value = 0;
+                    ProgressPercentageText.Text = "0%";
+                    return;
+                }
+
+                var uniqueCells = GetUniqueExcelCells();
+                var mappedCount = uniqueCells.Count(cell => _mappingManager.HasMapping(cell));
+                var totalCount = uniqueCells.Count;
+
+                if (totalCount > 0)
+                {
+                    var percentage = (double)mappedCount / totalCount * 100;
+                    MappingProgressBar.Value = percentage;
+                    ProgressPercentageText.Text = $"{percentage:F0}%";
+                }
+                else
+                {
+                    MappingProgressBar.Value = 0;
+                    ProgressPercentageText.Text = "0%";
+                }
+            }
+            catch (Exception)
+            {
+                MappingProgressBar.Value = 0;
+                ProgressPercentageText.Text = "0%";
+            }
+        }
+
+        private void SearchMappings_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            LoadExistingMappings();
         }
 
         private void ClearAllMappings_Click(object sender, RoutedEventArgs e)
         {
             var result = MessageBox.Show(
-                "Er du sikker på at du vil slette ALLE mappings?",
+                "Er du sikker på at du vil slette ALLE mappings?\n\nDenne handlingen kan ikke angres.",
                 "Bekreft sletting av alle mappings",
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Warning);
@@ -85,12 +152,10 @@ namespace WpfEGridApp
                     _mappingManager.RemoveMapping(mapping.ExcelReference);
                 }
                 LoadExistingMappings();
+                UpdateProgress();
                 UpdateStatus("Alle mappings slettet");
             }
         }
-
-        private Queue<string> _specificMappingQueue;
-        private bool _isInSpecificMappingMode = false;
 
         private void StartSpecificMapping_Click(object sender, RoutedEventArgs e)
         {
@@ -197,6 +262,7 @@ namespace WpfEGridApp
             this.WindowState = WindowState.Normal;
             this.Activate();
             LoadExistingMappings();
+            UpdateProgress();
 
             // Continue with next mapping immediately
             System.Threading.Tasks.Task.Delay(100).ContinueWith(_ =>
@@ -211,6 +277,7 @@ namespace WpfEGridApp
             _specificMappingQueue = null;
             _mainWindow.EndMappingMode();
             UpdateStatus("Spesifikk mapping fullført");
+            UpdateProgress();
 
             this.WindowState = WindowState.Normal;
             this.Activate();
@@ -244,6 +311,7 @@ namespace WpfEGridApp
         private void OnMappingCompleted(string reference, string ignore)
         {
             LoadExistingMappings();
+            UpdateProgress();
             NewExcelReference.Clear();
             this.WindowState = WindowState.Normal;
             this.Activate();
@@ -374,6 +442,7 @@ namespace WpfEGridApp
                 {
                     _mappingManager.RemoveMapping(excelReference);
                     LoadExistingMappings();
+                    UpdateProgress();
                     UpdateStatus($"Slettet mapping for {excelReference}");
                 }
             }
@@ -383,8 +452,15 @@ namespace WpfEGridApp
         {
             try
             {
+                ProcessingStatusText.Text = "Prosesserer...";
+                ProcessingStatusText.Foreground = System.Windows.Media.Brushes.Orange;
+
                 var processor = new ExcelConnectionProcessor(_mainWindow, _mappingManager);
                 var processedCount = processor.ProcessAllConnections();
+
+                ProcessingStatusText.Text = "Prosessering fullført";
+                ProcessingStatusText.Foreground = System.Windows.Media.Brushes.LightGreen;
+                LastProcessingResultText.Text = $"Prosesserte {processedCount} ledninger";
 
                 UpdateStatus($"Prosesserte {processedCount} ledninger");
                 MessageBox.Show($"Ferdig! Prosesserte {processedCount} ledninger automatisk.",
@@ -395,6 +471,10 @@ namespace WpfEGridApp
             }
             catch (Exception ex)
             {
+                ProcessingStatusText.Text = "Prosessering feilet";
+                ProcessingStatusText.Foreground = System.Windows.Media.Brushes.Red;
+                LastProcessingResultText.Text = $"Feil: {ex.Message}";
+
                 UpdateStatus($"Feil under prosessering: {ex.Message}");
                 MessageBox.Show($"Feil under automatisk prosessering: {ex.Message}", "Feil",
                                MessageBoxButton.OK, MessageBoxImage.Error);
@@ -405,16 +485,109 @@ namespace WpfEGridApp
         {
             try
             {
+                ProcessingStatusText.Text = "Kjører test...";
+                ProcessingStatusText.Foreground = System.Windows.Media.Brushes.Orange;
+
                 var processor = new ExcelConnectionProcessor(_mainWindow, _mappingManager);
                 var result = processor.TestProcessing();
+
+                ProcessingStatusText.Text = "Test fullført";
+                ProcessingStatusText.Foreground = System.Windows.Media.Brushes.LightGreen;
 
                 var message = $"Test resultat:\n\n{result}";
                 MessageBox.Show(message, "Test prosessering", MessageBoxButton.OK, MessageBoxImage.Information);
             }
             catch (Exception ex)
             {
+                ProcessingStatusText.Text = "Test feilet";
+                ProcessingStatusText.Foreground = System.Windows.Media.Brushes.Red;
+                LastProcessingResultText.Text = $"Feil: {ex.Message}";
+
                 UpdateStatus($"Feil under test: {ex.Message}");
                 MessageBox.Show($"Feil under test prosessering: {ex.Message}", "Feil",
+                               MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void ExportMappings_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var saveFileDialog = new SaveFileDialog
+                {
+                    Filter = "JSON Files (*.json)|*.json|All Files (*.*)|*.*",
+                    Title = "Eksporter Mappings"
+                };
+
+                if (saveFileDialog.ShowDialog() == true)
+                {
+                    var mappings = _mappingManager.GetAllMappings();
+                    var json = JsonSerializer.Serialize(mappings, new JsonSerializerOptions
+                    {
+                        WriteIndented = true
+                    });
+                    File.WriteAllText(saveFileDialog.FileName, json);
+                    UpdateStatus($"Eksporterte {mappings.Count} mappings til {Path.GetFileName(saveFileDialog.FileName)}");
+                }
+            }
+            catch (Exception ex)
+            {
+                UpdateStatus($"Feil ved eksport: {ex.Message}");
+                MessageBox.Show($"Feil ved eksport av mappings: {ex.Message}", "Feil",
+                               MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void ImportMappings_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var openFileDialog = new OpenFileDialog
+                {
+                    Filter = "JSON Files (*.json)|*.json|All Files (*.*)|*.*",
+                    Title = "Importer Mappings"
+                };
+
+                if (openFileDialog.ShowDialog() == true)
+                {
+                    var json = File.ReadAllText(openFileDialog.FileName);
+                    var mappings = JsonSerializer.Deserialize<List<ComponentMapping>>(json);
+
+                    if (mappings != null)
+                    {
+                        var result = MessageBox.Show(
+                            $"Dette vil erstatte alle eksisterende mappings med {mappings.Count} mappings fra filen.\n\nFortsette?",
+                            "Bekreft import",
+                            MessageBoxButton.YesNo,
+                            MessageBoxImage.Question);
+
+                        if (result == MessageBoxResult.Yes)
+                        {
+                            // Clear existing mappings
+                            var existingMappings = _mappingManager.GetAllMappings().ToList();
+                            foreach (var mapping in existingMappings)
+                            {
+                                _mappingManager.RemoveMapping(mapping.ExcelReference);
+                            }
+
+                            // Add imported mappings
+                            foreach (var mapping in mappings)
+                            {
+                                _mappingManager.AddMapping(mapping.ExcelReference, mapping.GridRow,
+                                                         mapping.GridColumn, mapping.DefaultToBottom);
+                            }
+
+                            LoadExistingMappings();
+                            UpdateProgress();
+                            UpdateStatus($"Importerte {mappings.Count} mappings fra {Path.GetFileName(openFileDialog.FileName)}");
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                UpdateStatus($"Feil ved import: {ex.Message}");
+                MessageBox.Show($"Feil ved import av mappings: {ex.Message}", "Feil",
                                MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
@@ -426,7 +599,8 @@ namespace WpfEGridApp
 
         private void UpdateStatus(string message)
         {
-            StatusText.Text = $"{DateTime.Now:HH:mm:ss} - {message}";
+            StatusText.Text = message;
+            TimestampText.Text = DateTime.Now.ToString("HH:mm:ss");
         }
     }
 
