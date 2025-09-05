@@ -28,9 +28,8 @@ namespace WpfEGridApp
         private bool _isInMappingMode = false;
         private Action<string, string> _mappingCompletedCallback;
 
-        // Indicates whether the application is in cell removal mode.  When true
-        // regular cell clicks will remove the cell from the grid instead of
-        // initiating a measurement.  The RemoveCellsButton toggles this flag.
+        // Når true vil klikk på vanlige celler «fjerne» cellen (skjules og deaktiveres)
+        // i stedet for å starte måling.
         private bool _isRemovingCells = false;
 
         public int Sections
@@ -373,7 +372,9 @@ namespace WpfEGridApp
         {
             foreach (var cell in allCells.Values)
             {
-                cell.ButtonRef.Background = new SolidColorBrush(Color.FromRgb(74, 90, 91));
+                // Ikke reaktiver celler som er «fjernet»
+                if (cell.ButtonRef.IsEnabled)
+                    cell.ButtonRef.Background = new SolidColorBrush(Color.FromRgb(74, 90, 91));
             }
             foreach (var cell in mappingCells.Values)
             {
@@ -393,27 +394,27 @@ namespace WpfEGridApp
         {
             var btn = sender as Button;
 
-            // If we are in removal mode, remove the clicked cell from the grid and
-            // internal cell dictionary.  Skip any measurement processing.
+            // Fjerning av celler uten å kollapse griden:
+            // - Ikke fjern fra Grid.Children
+            // - Ikke sett Visibility=Collapsed (det kollapser layout)
+            // - Bruk Visibility.Hidden så plassen beholdes
+            // - Fjern cellen fra allCells slik at pathfinding ignorerer den
             if (_isRemovingCells)
             {
                 if (btn != null)
                 {
-                    // Locate the corresponding cell in the allCells dictionary
                     var cellEntry = allCells.FirstOrDefault(kvp => kvp.Value.ButtonRef == btn);
                     if (!cellEntry.Equals(default(KeyValuePair<(int globalRow, int globalCol), Cell>)))
                     {
-                        // Remove the UI element from its parent grid
-                        if (btn.Parent is Grid parentGrid)
-                        {
-                            parentGrid.Children.Remove(btn);
-                        }
-                        // Remove from the dictionary so pathfinding no longer considers it
+                        btn.IsEnabled = false;
+                        btn.Visibility = Visibility.Hidden;  // beholder plass i layout
+                        btn.Opacity = 0.0;
                         allCells.Remove(cellEntry.Key);
                     }
                 }
                 return;
             }
+
             if (_lockedPointA != null)
             {
                 if (endPoint != null)
@@ -449,12 +450,11 @@ namespace WpfEGridApp
             var special = points.FirstOrDefault(p => p.SectionIndex == sectionIndex);
             if (special == null) return;
 
-            // Check if we're in mapping mode
+            // Sjekk mapping-modus
             if (_isInMappingMode && !string.IsNullOrEmpty(_currentMappingReference))
             {
-                // Map to special point (Door or Motor)
                 int specialRow = special.Type == SpecialPointType.Door ? -2 : -1;
-                int specialCol = 1000 + sectionIndex; // Special encoding for Door/Motor
+                int specialCol = 1000 + sectionIndex; // Spesiell koding for Door/Motor
 
                 _componentMappingManager?.AddMapping(_currentMappingReference, specialRow, specialCol, false);
 
@@ -463,7 +463,7 @@ namespace WpfEGridApp
                 return;
             }
 
-            // Normal click handling for manual measurement
+            // Vanlig klikk for manuell måling
             if (_lockedPointA != null)
             {
                 if (endPoint != null)
@@ -528,21 +528,11 @@ namespace WpfEGridApp
             Cell startCell = null;
             Cell endCell = null;
 
-            // Ekstra distanse for å justere start- og sluttdistanser. Vi
-            // ønsker at motor/dør som startpunkt skal ha samme bidrag som når de
-            // er sluttpunkter (500 for motor, 1000 for dør), og at vanlige
-            // celler bidrar med 200 uavhengig av om de er start eller slutt.
-            // PathFinder.CalculateDistance legger til 100 for startpunkt og
-            // 200 for sluttpunkt (kun dersom slutt ikke er spesial). Vi
-            // kompenserer derfor her ved å justere med ±100 for spesial og
-            // vanlige celler slik at summene blir symmetriske.
+            // Ekstra distanse for å justere start- og sluttdistanser (symmetri)
             double extraDistance = 0;
 
             if (startPoint is SpecialPoint spStart)
             {
-                // Spesialpunkt som start: motor = 400, dør = 900. Når dette legges
-                // sammen med 100 som PathFinder.CalculateDistance gir for
-                // startkoblingen, får vi 500/1000 mm som ønsket.
                 if (allCells.TryGetValue((spStart.GlobalRow, spStart.GlobalCol), out startCell))
                 {
                     extraDistance += spStart.Type == SpecialPointType.Door ? 900 : 400;
@@ -550,8 +540,6 @@ namespace WpfEGridApp
             }
             else if (startPoint is Button btnStart)
             {
-                // Vanlig celle som start: legg til 100 mm ekstra slik at
-                // totale startkostnaden blir 200 mm (100 fra CalculateDistance + 100 her)
                 startCell = allCells.Values.FirstOrDefault(c => c.ButtonRef == btnStart);
                 if (startCell != null)
                     extraDistance += 100;
@@ -559,9 +547,6 @@ namespace WpfEGridApp
 
             if (endPoint is SpecialPoint spEnd)
             {
-                // Sluttpunkt som spesial: motor = 500, dør = 1000. Ingen justering
-                // nødvendig her da CalculateDistance ikke legger til 200 når
-                // sluttpunktet er spesial.
                 if (allCells.TryGetValue((spEnd.GlobalRow, spEnd.GlobalCol), out endCell))
                 {
                     extraDistance += spEnd.Type == SpecialPointType.Door ? 1000 : 500;
@@ -569,8 +554,6 @@ namespace WpfEGridApp
             }
             else if (endPoint is Button btnEnd)
             {
-                // Vanlig celle som slutt: ingen ekstra distanse her, da
-                // CalculateDistance allerede legger til 200 mm for sluttkoblingen.
                 endCell = allCells.Values.FirstOrDefault(c => c.ButtonRef == btnEnd);
             }
 
@@ -578,6 +561,19 @@ namespace WpfEGridApp
             {
                 ResultText.Text = "Invalid start or end point.";
                 ResetSelection();
+                return;
+            }
+
+            // 💡 Ny regel: samme celle = 300 mm (f.eks. Motor1–Motor1 eller celle–samme-celle)
+            if (startCell == endCell)
+            {
+                HighlightPath(new List<Cell> { startCell });
+                const double sameRefDistance = 300.0;
+                ResultText.Text = $"Shortest path: {sameRefDistance:F2} mm";
+                FindNextAvailableRow();
+                LogMeasurementToExcel(sameRefDistance);
+                _currentExcelRow++;
+                UpdateExcelDisplayText();
                 return;
             }
 
@@ -590,29 +586,23 @@ namespace WpfEGridApp
             }
 
             bool endsInSpecial = endPoint is SpecialPoint;
-            // Calculate the base distance using the same logic as PathFinder.  This
-            // includes a fixed 100 mm start connection and, if the end point is not
-            // a special point, a 200 mm end connection.  For measurements
-            // between two regular cells we want the total to be exactly 100 mm
-            // (start) + path distance + 200 mm (end) and NOT include any extra
-            // compensation or constant.  For other combinations (involving motors
-            // or doors) we preserve the existing logic with extra adjustments and
-            // the additional 50 mm.
             double baseDistance = PathFinder.CalculateDistance(path, endsInSpecial, HasHorizontalNeighbor);
-            double totalDistance;
+
+            double totalDistance; // << kun én deklarasjon (fix for CS0136)
             bool startIsButton = startPoint is Button;
             bool endIsButton = endPoint is Button;
+
             if (startIsButton && endIsButton)
             {
-                // Both points are regular cells: use only the base distance.
+                // Begge er vanlige celler: bruk kun baseDistance
                 totalDistance = baseDistance;
             }
             else
             {
-                // At least one point is a motor or door; use existing compensation and
-                // add the constant 50 mm as originally implemented.
+                // Minst én er motor/dør: bruk kompensasjon + 50 mm
                 totalDistance = baseDistance + extraDistance + 50;
             }
+
             HighlightPath(path);
 
             if (startPoint is SpecialPoint sp1 && endPoint is SpecialPoint sp2)
@@ -659,7 +649,8 @@ namespace WpfEGridApp
         {
             foreach (var cell in allCells.Values)
             {
-                cell.ButtonRef.Background = new SolidColorBrush(Color.FromRgb(74, 90, 91));
+                if (cell.ButtonRef.IsEnabled)
+                    cell.ButtonRef.Background = new SolidColorBrush(Color.FromRgb(74, 90, 91));
             }
             foreach (var cell in mappingCells.Values)
             {
@@ -690,7 +681,8 @@ namespace WpfEGridApp
         {
             foreach (var cell in allCells.Values)
             {
-                cell.ButtonRef.Background = new SolidColorBrush(Color.FromRgb(74, 90, 91));
+                if (cell.ButtonRef.IsEnabled)
+                    cell.ButtonRef.Background = new SolidColorBrush(Color.FromRgb(74, 90, 91));
             }
             foreach (var cell in mappingCells.Values)
             {
@@ -704,7 +696,8 @@ namespace WpfEGridApp
             foreach (var mp in motorPoints)
                 mp.Button.Background = (Brush)FindResource("OrangeButtonBrush");
             foreach (var cell in path)
-                cell.ButtonRef.Background = new SolidColorBrush(Color.FromRgb(0, 178, 148));
+                if (cell.ButtonRef.IsEnabled)
+                    cell.ButtonRef.Background = new SolidColorBrush(Color.FromRgb(0, 178, 148));
             if (startPoint is Button b1)
                 b1.Background = new SolidColorBrush(Color.FromRgb(0, 120, 212));
             if (endPoint is Button b2)
@@ -796,38 +789,28 @@ namespace WpfEGridApp
         }
 
         /// <summary>
-        /// Toggle cell removal mode on or off.  When removal mode is active
-        /// clicking on a regular grid cell will remove it from the UI and
-        /// underlying data structure so it is no longer considered in
-        /// subsequent measurements.  Toggling the mode off restores normal
-        /// measurement behaviour.  The button's label is updated to reflect
-        /// the current state and a message is shown in the result text to
-        /// guide the user.
+        /// Toggle cell removal mode on or off.
         /// </summary>
         private void RemoveCellsButton_Click(object sender, RoutedEventArgs e)
         {
             _isRemovingCells = !_isRemovingCells;
             if (_isRemovingCells)
             {
-                // Enter removal mode: update button text and inform user
                 if (RemoveCellsButton != null)
                 {
                     RemoveCellsButton.Content = "Ferdig fjerning";
                 }
-                // Clear any current selection and locked points
                 startPoint = null;
                 endPoint = null;
                 ResultText.Text = "Klikk på cellene du vil fjerne.";
             }
             else
             {
-                // Exit removal mode: restore button text and clear message
                 if (RemoveCellsButton != null)
                 {
                     RemoveCellsButton.Content = "Fjern celler";
                 }
                 ResultText.Text = _lockedPointA != null ? $"Locked point A: {_lockedPointA.Type} {_lockedPointA.SectionIndex + 1}" : "";
-                // Reset any temporary highlights
                 ResetSelection();
             }
         }
@@ -1036,7 +1019,7 @@ namespace WpfEGridApp
             _lockedButton = null;
             _currentExcelRow = 2;
             BuildAllSections();
-            // Reset removal mode when rebuilding the grid to avoid stale state
+            // Reset removal mode when rebuilding the grid
             _isRemovingCells = false;
             if (RemoveCellsButton != null)
             {
@@ -1057,7 +1040,6 @@ namespace WpfEGridApp
                 SelectedExcelFile = openFileDialog.FileName;
                 if (InitializeExcel(SelectedExcelFile))
                 {
-                    // Fjernet success melding som ønsket
                     _currentExcelRow = 2;
                     _componentMappingManager = new ComponentMappingManager(this, SelectedExcelFile);
                     UpdateExcelDisplayText();
@@ -1228,7 +1210,7 @@ namespace WpfEGridApp
         }
     }
 
-    // BEHOLDT ORIGINAL ExcelConnectionProcessor som fungerte
+    // BEHOLDT ORIGINAL ExcelConnectionProcessor med tillegg for 300 mm ved samme referanse
     public class ExcelConnectionProcessor
     {
         private readonly MainWindow _mainWindow;
@@ -1259,7 +1241,6 @@ namespace WpfEGridApp
                 {
                     try
                     {
-                        // Read Excel cells safely
                         string cellB = "";
                         string cellC = "";
                         object cellA = null;
@@ -1268,20 +1249,19 @@ namespace WpfEGridApp
                         try { cellC = _mainWindow.worksheet.Cells[row, 3].Value?.ToString() ?? ""; } catch { }
                         try { cellA = _mainWindow.worksheet.Cells[row, 1].Value; } catch { }
 
-                        // Skip if already has measurement and we're not reprocessing
+                        // Hopp over hvis allerede målt
                         if (cellA != null && !string.IsNullOrEmpty(cellA.ToString()) &&
                             double.TryParse(cellA.ToString(), out _))
                             continue;
 
-                        // Skip if no points to connect
+                        // Hopp over hvis tom
                         if (string.IsNullOrWhiteSpace(cellB) && string.IsNullOrWhiteSpace(cellC))
                             continue;
 
-                        // IMPORTANT: Only process if BOTH sides have mappings
+                        // Begge sider må ha mapping
                         var mappingA = _mappingManager.GetMapping(cellB);
                         var mappingB = _mappingManager.GetMapping(cellC);
 
-                        // Only continue if BOTH mappings are found
                         if (mappingA != null && mappingB != null)
                         {
                             var posA = GetGridPositionFromMapping(mappingA);
@@ -1289,58 +1269,53 @@ namespace WpfEGridApp
 
                             if (posA.HasValue && posB.HasValue)
                             {
+                                // 💡 Ny regel: Samme posisjon = 300 mm
+                                if (posA.Value == posB.Value)
+                                {
+                                    _mainWindow.worksheet.Cells[row, 1].Value = 300.0;
+                                    processedCount++;
+                                    continue;
+                                }
+
                                 if (allCells.TryGetValue(posA.Value, out var startCell) &&
                                     allCells.TryGetValue(posB.Value, out var endCell))
                                 {
                                     var path = PathFinder.FindShortestPath(startCell, endCell, allCells, _mainWindow.HasHorizontalNeighbor);
                                     if (path != null && path.Count > 0)
                                     {
-                                        // Beregn path-avstand (kun mellom grid-punkter) - IKKE RØRT
+                                        // Beregn path-avstand (kun mellom grid-punkter)
                                         double pathDistance = 0;
                                         for (int i = 1; i < path.Count - 1; i++)
                                             pathDistance += _mainWindow.HasHorizontalNeighbor(path[i].Row, path[i].Col) ? 100 : 50;
 
-                                        // Determine whether both ends are regular cells (neither motor nor door).
                                         bool aIsNormal = mappingA.GridRow != -1 && mappingA.GridRow != -2;
                                         bool bIsNormal = mappingB.GridRow != -1 && mappingB.GridRow != -2;
                                         double totalDistance;
 
                                         if (aIsNormal && bIsNormal)
                                         {
-                                            // Both sides are regular cells: the start contributes 100 mm,
-                                            // the end contributes 200 mm, and there is no extra constant.
+                                            // Vanlige celler begge ender
                                             totalDistance = pathDistance + 100 + 200;
                                         }
                                         else
                                         {
-                                            // Preserve existing logic for connections involving motors or doors.
-                                            // Start point (A) contribution.  The startDistance must include the
-                                            // 100 mm start connection used by the path finding plus the appropriate
-                                            // extra contribution (400 mm for motors, 900 mm for doors, 100 mm for
-                                            // regular cells).  This results in 200 mm for a normal cell, 500 mm
-                                            // for a motor and 1000 mm for a door when combined with the internal
-                                            // path distances.
+                                            // Motor/Dør-involvering: behold opprinnelig logikk
                                             double startDistance;
                                             if (mappingA.GridRow == -1) // Motor
                                                 startDistance = 500;
                                             else if (mappingA.GridRow == -2) // Door
                                                 startDistance = 1000;
                                             else
-                                                startDistance = 200; // Normal cell
+                                                startDistance = 200; // Normal celle
 
-                                            // End point (B) contribution.  For normal cells we use 200 mm,
-                                            // for motors 500 mm and for doors 1000 mm.  A constant 50 mm is
-                                            // later added regardless of type to ensure the last cell always
-                                            // contributes an extra 50 mm.
                                             double endDistance;
                                             if (mappingB.GridRow == -1) // Motor
                                                 endDistance = 500;
                                             else if (mappingB.GridRow == -2) // Door
                                                 endDistance = 1000;
                                             else
-                                                endDistance = 200; // Normal cell
+                                                endDistance = 200; // Normal celle
 
-                                            // Always add 50 mm for the last cell regardless of its type
                                             totalDistance = pathDistance + startDistance + endDistance + 50;
                                         }
 
@@ -1368,10 +1343,10 @@ namespace WpfEGridApp
             return processedCount;
         }
 
-        // ORIGINAL GetGridPositionFromMapping som fungerte for B-mapping
+        // ORIGINAL GetGridPositionFromMapping (med forbedringer for T/B)
         private (int Row, int Col)? GetGridPositionFromMapping(ComponentMapping mapping)
         {
-            // Handle special points (Motors and Doors)
+            // Special points (Motors and Doors)
             if (mapping.GridRow == -1 && mapping.GridColumn >= 1000) // Motor
             {
                 var motorIndex = mapping.GridColumn - 1000;
@@ -1386,41 +1361,26 @@ namespace WpfEGridApp
             }
             else
             {
-                // Handle bottom side mappings (negative rows) - DETTE FUNGERTE
+                // Bottom side mappings (negative rows)
                 if (mapping.GridRow < 0)
                 {
-                    // Convert negative row back to positive for allCells lookup
                     int actualRow = -(mapping.GridRow + 1);
                     return (actualRow, mapping.GridColumn);
                 }
                 else
                 {
-                    // LAGT TIL: Bedre håndtering av top side (T) mappings
-                    // Hvis det er top-side mapping, bruk direkte koordinater
-                    // Hvis DefaultToBottom er true, prøv å finne cellen under
-                    int adjustedRow = mapping.GridRow;
-
+                    // Top-side mapping, prøv smart fallback
                     var allCells = _mainWindow.GetAllCells();
 
-                    // Prøv først den eksakte posisjonen
                     if (allCells.ContainsKey((mapping.GridRow, mapping.GridColumn)))
-                    {
                         return (mapping.GridRow, mapping.GridColumn);
-                    }
 
-                    // Hvis DefaultToBottom, prøv raden under
                     if (mapping.DefaultToBottom && allCells.ContainsKey((mapping.GridRow + 1, mapping.GridColumn)))
-                    {
                         return (mapping.GridRow + 1, mapping.GridColumn);
-                    }
 
-                    // Prøv raden over
                     if (allCells.ContainsKey((mapping.GridRow - 1, mapping.GridColumn)))
-                    {
                         return (mapping.GridRow - 1, mapping.GridColumn);
-                    }
 
-                    // Returner original hvis intet annet fungerer
                     return (mapping.GridRow, mapping.GridColumn);
                 }
             }
@@ -1530,6 +1490,12 @@ namespace WpfEGridApp
 
                         if (posA.HasValue && posB.HasValue)
                         {
+                            if (posA.Value == posB.Value)
+                            {
+                                results.Add($"  -> SAMME REF: 300.00 mm\n");
+                                continue;
+                            }
+
                             var allCells = _mainWindow.GetAllCells();
                             if (allCells.TryGetValue(posA.Value, out var startCell) &&
                                 allCells.TryGetValue(posB.Value, out var endCell))
@@ -1540,10 +1506,8 @@ namespace WpfEGridApp
                                     double baseDistance = PathFinder.CalculateDistance(path, false, _mainWindow.HasHorizontalNeighbor);
                                     double connectionDistanceA = GetConnectionDistance(cellB, mappingA);
                                     double connectionDistanceB = GetConnectionDistance(cellC, mappingB);
-                                    // Include an additional 50 mm for the last cell to mirror the
-                                    // logic used in the main measurement routines.  This ensures
-                                    // that the test processing output matches the values
-                                    // generated during manual and automatic measurements.
+
+                                    // Speil logikken i manuell/auto (ekstra 50 mm)
                                     double totalDistance = baseDistance + connectionDistanceA + connectionDistanceB + 50;
                                     results.Add($"  BASE AVSTAND: {baseDistance:F2} mm");
                                     results.Add($"  TILKOBLINGS A: {connectionDistanceA:F2} mm");
