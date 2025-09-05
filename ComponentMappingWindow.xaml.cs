@@ -117,18 +117,12 @@ namespace WpfEGridApp
 
                 ProcessNextSpecificMapping();
 
-                UpdateStatus($"Starter spesifikk mapping av {unmappedCells.Count} celler. Trykk ESC for å avbryte.");
+                UpdateStatus($"Starter spesifikk mapping av {unmappedCells.Count} celler.");
             }
             catch (Exception ex)
             {
                 UpdateStatus($"Feil ved oppstart av spesifikk mapping: {ex.Message}");
             }
-        }
-
-        private void CancelSpecificMapping_Click(object sender, RoutedEventArgs e)
-        {
-            EndSpecificMappingMode();
-            UpdateStatus("Spesifikk mapping avbrutt");
         }
 
         private List<string> GetUniqueExcelCells()
@@ -186,13 +180,12 @@ namespace WpfEGridApp
             if (!_isInSpecificMappingMode || _specificMappingQueue == null || _specificMappingQueue.Count == 0)
             {
                 EndSpecificMappingMode();
-                MessageBox.Show("Spesifikk mapping fullført!", "Ferdig", MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
             var currentCell = _specificMappingQueue.Dequeue();
 
-            // Show in MainWindow instead of MessageBox
+            // Show in MainWindow
             _mainWindow.StartInteractiveMapping(currentCell, "", OnSpecificMappingCompleted);
 
             UpdateStatus($"Mapper '{currentCell}' - {_specificMappingQueue.Count} gjenstår");
@@ -205,8 +198,8 @@ namespace WpfEGridApp
             this.Activate();
             LoadExistingMappings();
 
-            // Short pause and continue with next mapping
-            System.Threading.Tasks.Task.Delay(500).ContinueWith(_ =>
+            // Continue with next mapping immediately
+            System.Threading.Tasks.Task.Delay(100).ContinueWith(_ =>
             {
                 this.Dispatcher.Invoke(() => ProcessNextSpecificMapping());
             });
@@ -217,7 +210,7 @@ namespace WpfEGridApp
             _isInSpecificMappingMode = false;
             _specificMappingQueue = null;
             _mainWindow.EndMappingMode();
-            UpdateStatus("Spesifikk mapping fullført/avbrutt");
+            UpdateStatus("Spesifikk mapping fullført");
 
             this.WindowState = WindowState.Normal;
             this.Activate();
@@ -304,28 +297,44 @@ namespace WpfEGridApp
         {
             if (string.IsNullOrWhiteSpace(cellValue)) return;
 
+            // Extract prefix (everything before the last component reference)
+            // For "E01-A1-X3:1" we want "E01-A1"
+            // For "A01-K3" we want "A01-K3"
+            // For "J01-K4" we want "J01-K4"
+
             var allMatches = new List<string>();
 
-            // Terminal block matches (X20:41 should match X20:)
-            var terminalMatches = Regex.Matches(cellValue, @"[A-Z]\d+:\d+");
-            foreach (Match match in terminalMatches)
+            // Look for patterns like "XXX-YY" where XXX is prefix and YY is component
+            var prefixMatches = Regex.Matches(cellValue, @"([A-Z]\d+-[A-Z]\d+)");
+            foreach (Match match in prefixMatches)
             {
-                var fullRef = match.Value;
-                var baseRef = fullRef.Substring(0, fullRef.IndexOf(':') + 1);
-                allMatches.Add(baseRef);
+                allMatches.Add(match.Groups[1].Value);
             }
 
-            // Simple matches (X20, F5, etc.)
-            var simpleMatches = Regex.Matches(cellValue, @"[A-Z]\d+(?!:)");
-            foreach (Match match in simpleMatches)
+            // If no prefix pattern found, try terminal block patterns
+            if (allMatches.Count == 0)
             {
-                var startPos = match.Index;
-                var endPos = startPos + match.Length;
+                // Terminal block matches (X20:41 should match X20:)
+                var terminalMatches = Regex.Matches(cellValue, @"[A-Z]\d+:\d+");
+                foreach (Match match in terminalMatches)
+                {
+                    var fullRef = match.Value;
+                    var baseRef = fullRef.Substring(0, fullRef.IndexOf(':') + 1);
+                    allMatches.Add(baseRef);
+                }
 
-                if (endPos < cellValue.Length && cellValue[endPos] == ':')
-                    continue;
+                // Simple matches (X20, F5, etc.)
+                var simpleMatches = Regex.Matches(cellValue, @"[A-Z]\d+(?!:)");
+                foreach (Match match in simpleMatches)
+                {
+                    var startPos = match.Index;
+                    var endPos = startPos + match.Length;
 
-                allMatches.Add(match.Value);
+                    if (endPos < cellValue.Length && cellValue[endPos] == ':')
+                        continue;
+
+                    allMatches.Add(match.Value);
+                }
             }
 
             foreach (var reference in allMatches.Distinct())

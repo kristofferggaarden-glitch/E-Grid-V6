@@ -6,6 +6,7 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using Microsoft.Win32;
 using Excel = Microsoft.Office.Interop.Excel;
@@ -262,11 +263,11 @@ namespace WpfEGridApp
             var btnTop = new Button
             {
                 Width = 50,
-                Height = 18,
-                Margin = new Thickness(4, 1, 4, 1),
+                Height = 25,
+                Margin = new Thickness(2, 2, 2, 2),
                 Background = new SolidColorBrush(Color.FromRgb(80, 90, 100)),
                 ToolTip = $"Mapping cell TOP ({localRow}, {localCol}) in section {sectionIndex + 1}",
-                Style = (Style)FindResource("RoundedButtonStyle"),
+                Style = (Style)FindResource("MappingButtonStyle"),
                 Content = "T"
             };
             btnTop.Click += MappingCell_Click;
@@ -274,11 +275,11 @@ namespace WpfEGridApp
             var btnBottom = new Button
             {
                 Width = 50,
-                Height = 18,
-                Margin = new Thickness(4, 1, 4, 1),
+                Height = 25,
+                Margin = new Thickness(2, 2, 2, 2),
                 Background = new SolidColorBrush(Color.FromRgb(60, 70, 80)),
                 ToolTip = $"Mapping cell BOTTOM ({localRow}, {localCol}) in section {sectionIndex + 1}",
-                Style = (Style)FindResource("RoundedButtonStyle"),
+                Style = (Style)FindResource("MappingButtonStyle"),
                 Content = "B"
             };
             btnBottom.Click += MappingCell_Click;
@@ -330,37 +331,7 @@ namespace WpfEGridApp
                 {
                     int actualRow = isBottomSide ? -(cell.Row + 1) : cell.Row;
 
-                    // Check if position already mapped
-                    bool isPositionMapped = _componentMappingManager != null && _componentMappingManager.IsPositionMapped(actualRow, cell.Col, isBottomSide);
-                    if (isPositionMapped)
-                    {
-                        var result = MessageBox.Show(
-                            $"Posisjonen ({actualRow}, {cell.Col}) {(isBottomSide ? "undersiden" : "oversiden")} er allerede mappet. Vil du overskrive?",
-                            "Posisjon allerede mappet",
-                            MessageBoxButton.YesNo,
-                            MessageBoxImage.Warning);
-                        if (result != MessageBoxResult.Yes)
-                            return;
-                    }
-
-                    // Check if reference already mapped
-                    bool isReferenceMapped = _componentMappingManager != null && _componentMappingManager.IsReferenceMapped(_currentMappingReference);
-                    if (isReferenceMapped)
-                    {
-                        var result = MessageBox.Show(
-                            $"Referansen {_currentMappingReference} er allerede mappet. Vil du overskrive?",
-                            "Referanse allerede mappet",
-                            MessageBoxButton.YesNo,
-                            MessageBoxImage.Warning);
-                        if (result != MessageBoxResult.Yes)
-                            return;
-                    }
-
                     _componentMappingManager?.AddMapping(_currentMappingReference, actualRow, cell.Col, isBottomSide);
-
-                    string sideText = isBottomSide ? " (undersiden)" : " (oversiden)";
-                    MessageBox.Show($"Mappet {_currentMappingReference} til posisjon ({actualRow}, {cell.Col}){sideText}",
-                                   "Mapping lagret", MessageBoxButton.OK, MessageBoxImage.Information);
 
                     _mappingCompletedCallback?.Invoke(_currentMappingReference, "");
                     EndMappingMode();
@@ -373,6 +344,10 @@ namespace WpfEGridApp
             _isInMappingMode = false;
             _currentMappingReference = "";
             _mappingCompletedCallback = null;
+
+            // Hide mapping indicator and cancel button
+            MappingIndicator.Visibility = Visibility.Collapsed;
+            CancelMappingButton.Visibility = Visibility.Collapsed;
 
             ResetCellColors();
             foreach (var cell in allCells.Values)
@@ -455,10 +430,6 @@ namespace WpfEGridApp
                 int specialCol = 1000 + sectionIndex; // Special encoding for Door/Motor
 
                 _componentMappingManager?.AddMapping(_currentMappingReference, specialRow, specialCol, false);
-
-                string pointType = special.Type == SpecialPointType.Door ? "Door" : "Motor";
-                MessageBox.Show($"Mappet {_currentMappingReference} til {pointType} {sectionIndex + 1}",
-                               "Mapping lagret", MessageBoxButton.OK, MessageBoxImage.Information);
 
                 _mappingCompletedCallback?.Invoke(_currentMappingReference, "");
                 EndMappingMode();
@@ -593,18 +564,18 @@ namespace WpfEGridApp
 
             bool endsInSpecial = endPoint is SpecialPoint;
             // Calculate the base distance using the same logic as PathFinder.  This
-            // includes a fixed 100 mm start connection and, if the end point is not
-            // a special point, a 200 mm end connection.  The extraDistance
+            // includes a fixed 100 mm start connection and, if the end point is not
+            // a special point, a 200 mm end connection.  The extraDistance
             // variable above compensates for the correct start/end contributions
-            // (for example, adding 900 mm for a door as start instead of only
-            // 100 mm).  In addition to this we now always add 50 mm on the
+            // (for example, adding 900 mm for a door as start instead of only
+            // 100 mm).  In addition to this we now always add 50 mm on the
             // last cell regardless of the endpoint type so that the end
-            // connection contributes 250 mm for normal cells (200 mm + 50 mm) and
+            // connection contributes 250 mm for normal cells (200 mm + 50 mm) and
             // increases motor/door ends by the same amount.  This keeps the
             // manual measurement in sync with the automatic processing logic.
             double totalDistance = PathFinder.CalculateDistance(path, endsInSpecial, HasHorizontalNeighbor)
                                  + extraDistance
-                                 + 50; // Always add 50 mm for the last cell
+                                 + 50; // Always add 50 mm for the last cell
             HighlightPath(path);
 
             if (startPoint is SpecialPoint sp1 && endPoint is SpecialPoint sp2)
@@ -748,6 +719,11 @@ namespace WpfEGridApp
             _isInMappingMode = true;
             _mappingCompletedCallback = onCompleted;
 
+            // Show mapping indicator with reference text
+            MappingIndicatorText.Text = $"Mapper: {excelReference}";
+            MappingIndicator.Visibility = Visibility.Visible;
+            CancelMappingButton.Visibility = Visibility.Visible;
+
             ResultText.Text = $"Klikk på grid-posisjonen for {excelReference} (mellomrader, Door eller Motor knapper)";
 
             // Highlight mapping cells
@@ -775,6 +751,11 @@ namespace WpfEGridApp
 
             this.Activate();
             this.Focus();
+        }
+
+        private void CancelMapping_Click(object sender, RoutedEventArgs e)
+        {
+            EndMappingMode();
         }
 
         private void AutomaticMeasureAll_Click(object sender, RoutedEventArgs e)
@@ -1240,12 +1221,12 @@ namespace WpfEGridApp
                                             pathDistance += _mainWindow.HasHorizontalNeighbor(path[i].Row, path[i].Col) ? 100 : 50;
 
                                         // Start point (A) contribution.
-                                        // The startDistance must include the 100 mm start
+                                        // The startDistance must include the 100 mm start
                                         // connection used by PathFinder.CalculateDistance plus the
-                                        // appropriate extra contribution (400 mm for motors,
-                                        // 900 mm for doors, 100 mm for regular cells).  This
-                                        // results in 200 mm for a normal cell, 500 mm for a
-                                        // motor and 1000 mm for a door when combined with the
+                                        // appropriate extra contribution (400 mm for motors,
+                                        // 900 mm for doors, 100 mm for regular cells).  This
+                                        // results in 200 mm for a normal cell, 500 mm for a
+                                        // motor and 1000 mm for a door when combined with the
                                         // internal path distances.
                                         double startDistance;
                                         if (mappingA.GridRow == -1) // Motor
@@ -1256,10 +1237,10 @@ namespace WpfEGridApp
                                             startDistance = 200; // Normal cell
 
                                         // End point (B) contribution.
-                                        // For normal cells we use 200 mm, for motors 500 mm and
-                                        // for doors 1000 mm.  A constant 50 mm is later added
+                                        // For normal cells we use 200 mm, for motors 500 mm and
+                                        // for doors 1000 mm.  A constant 50 mm is later added
                                         // regardless of type to ensure the last cell always
-                                        // contributes an extra 50 mm.
+                                        // contributes an extra 50 mm.
                                         double endDistance;
                                         if (mappingB.GridRow == -1) // Motor
                                             endDistance = 500;
@@ -1268,7 +1249,7 @@ namespace WpfEGridApp
                                         else
                                             endDistance = 200; // Normal cell
 
-                                        // Always add 50 mm for the last cell regardless of its type
+                                        // Always add 50 mm for the last cell regardless of its type
                                         double totalDistance = pathDistance + startDistance + endDistance + 50;
 
                                         if (totalDistance > 0)
@@ -1467,7 +1448,7 @@ namespace WpfEGridApp
                                     double baseDistance = PathFinder.CalculateDistance(path, false, _mainWindow.HasHorizontalNeighbor);
                                     double connectionDistanceA = GetConnectionDistance(cellB, mappingA);
                                     double connectionDistanceB = GetConnectionDistance(cellC, mappingB);
-                                    // Include an additional 50 mm for the last cell to mirror the
+                                    // Include an additional 50 mm for the last cell to mirror the
                                     // logic used in the main measurement routines.  This ensures
                                     // that the test processing output matches the values
                                     // generated during manual and automatic measurements.

@@ -131,6 +131,15 @@
             </Setter>
         </Style>
 
+        <!-- Style for mapping T/B buttons -->
+        <Style TargetType="Button" x:Key="MappingButtonStyle" BasedOn="{StaticResource RoundedButtonStyle}">
+            <Setter Property="Width" Value="50"/>
+            <Setter Property="Height" Value="25"/>
+            <Setter Property="Margin" Value="2"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+        </Style>
+
         <!-- Style for TextBox -->
         <Style TargetType="TextBox">
             <Setter Property="Padding" Value="10,6"/>
@@ -222,6 +231,22 @@
             <Setter Property="MaxWidth" Value="400"/>
             <Setter Property="Margin" Value="0,0,10,10"/>
         </Style>
+
+        <!-- Style for mapping indicator text -->
+        <Style TargetType="TextBlock" x:Key="MappingIndicatorStyle">
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Foreground" Value="#FFFF6B35"/>
+            <Setter Property="HorizontalAlignment" Value="Center"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Background" Value="#FF2A3B3C"/>
+            <Setter Property="Padding" Value="8,4"/>
+            <Setter Property="Effect">
+                <Setter.Value>
+                    <DropShadowEffect Color="Black" BlurRadius="4" ShadowDepth="2" Opacity="0.5"/>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
 
     <Border Background="{StaticResource PanelBackground}" CornerRadius="16" Margin="20" Padding="20">
@@ -241,6 +266,7 @@
                     <ColumnDefinition Width="80"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="80"/>
+                    <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
@@ -285,18 +311,37 @@
                         Background="{StaticResource AccentBrush}"
                         ToolTip="Automatically measure all connections using component mappings" Grid.Column="10" Width="160"/>
 
-                <TextBlock x:Name="ResultText" Style="{StaticResource ResultTextStyle}" Grid.Column="12" 
+                <Button x:Name="CancelMappingButton" Content="Avbryt Mapping" Click="CancelMapping_Click" 
+                        Style="{StaticResource RoundedButtonStyle}" 
+                        Background="#FFFF4444"
+                        ToolTip="Cancel current mapping operation" Grid.Column="11" Width="120"
+                        Visibility="Collapsed"/>
+
+                <TextBlock x:Name="ResultText" Style="{StaticResource ResultTextStyle}" Grid.Column="13" 
                           HorizontalAlignment="Right" Margin="0,0,15,0" FontSize="14"/>
             </Grid>
 
-            <!-- Grid Display -->
-            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" Grid.Row="1">
-                <Border Background="#FF2A3B3C" CornerRadius="10" Padding="10" Width="Auto" MinWidth="1323">
-                    <DockPanel>
-                        <StackPanel x:Name="MainPanel" Orientation="Horizontal" HorizontalAlignment="Left"/>
-                    </DockPanel>
+            <!-- Grid Display with mapping indicator overlay -->
+            <Grid Grid.Row="1">
+                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                    <Border Background="#FF2A3B3C" CornerRadius="10" Padding="10" Width="Auto" MinWidth="1323">
+                        <DockPanel>
+                            <StackPanel x:Name="MainPanel" Orientation="Horizontal" HorizontalAlignment="Left"/>
+                        </DockPanel>
+                    </Border>
+                </ScrollViewer>
+
+                <!-- Mapping indicator overlay -->
+                <Border x:Name="MappingIndicator" 
+                        Background="#80000000" 
+                        CornerRadius="10" 
+                        Visibility="Collapsed"
+                        IsHitTestVisible="False">
+                    <TextBlock x:Name="MappingIndicatorText" 
+                               Style="{StaticResource MappingIndicatorStyle}"
+                               Text="Mapper: X20:"/>
                 </Border>
-            </ScrollViewer>
+            </Grid>
 
             <!-- Results and Excel file path display -->
             <Grid Grid.Row="2" Margin="0,20,0,0">
