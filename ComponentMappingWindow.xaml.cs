@@ -7,7 +7,6 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
-using Microsoft.Win32;
 using Excel = Microsoft.Office.Interop.Excel;
 
 namespace WpfEGridApp
@@ -18,10 +17,6 @@ namespace WpfEGridApp
         private ComponentMappingManager _mappingManager;
         public ObservableCollection<MappingDisplayItem> MappingDisplayItems { get; set; }
         public ObservableCollection<UnmappedReferenceItem> UnmappedReferences { get; set; }
-
-        private Queue<string> _specificMappingQueue;
-        private bool _isInSpecificMappingMode = false;
-        private string _originalSearchText = "";
 
         public ComponentMappingWindow(MainWindow mainWindow, ComponentMappingManager mappingManager)
         {
@@ -36,8 +31,6 @@ namespace WpfEGridApp
             UnmappedReferencesList.ItemsSource = UnmappedReferences;
 
             LoadExistingMappings();
-            UpdateStatistics();
-            UpdateProgress();
             UpdateStatus("Component mapping vindu åpnet");
         }
 
@@ -46,17 +39,7 @@ namespace WpfEGridApp
             MappingDisplayItems.Clear();
             var mappings = _mappingManager.GetAllMappings();
 
-            var filteredMappings = mappings;
-
-            // Apply search filter if search text exists
-            if (!string.IsNullOrWhiteSpace(SearchMappingsBox?.Text))
-            {
-                var searchText = SearchMappingsBox.Text.ToLower();
-                filteredMappings = mappings.Where(m =>
-                    m.ExcelReference.ToLower().Contains(searchText)).ToList();
-            }
-
-            foreach (var mapping in filteredMappings)
+            foreach (var mapping in mappings)
             {
                 string position;
                 if (mapping.GridRow == -1)
@@ -83,63 +66,13 @@ namespace WpfEGridApp
                 });
             }
 
-            UpdateStatistics();
-        }
-
-        private void UpdateStatistics()
-        {
-            var allMappings = _mappingManager.GetAllMappings();
-            var componentMappings = allMappings.Where(m => m.GridRow >= 0).Count();
-            var specialMappings = allMappings.Where(m => m.GridRow < 0).Count();
-
-            TotalMappingsCount.Text = allMappings.Count.ToString();
-            ComponentMappingsCount.Text = componentMappings.ToString();
-            SpecialMappingsCount.Text = specialMappings.ToString();
-        }
-
-        private void UpdateProgress()
-        {
-            try
-            {
-                if (_mainWindow.worksheet == null)
-                {
-                    MappingProgressBar.Value = 0;
-                    ProgressPercentageText.Text = "0%";
-                    return;
-                }
-
-                var uniqueCells = GetUniqueExcelCells();
-                var mappedCount = uniqueCells.Count(cell => _mappingManager.HasMapping(cell));
-                var totalCount = uniqueCells.Count;
-
-                if (totalCount > 0)
-                {
-                    var percentage = (double)mappedCount / totalCount * 100;
-                    MappingProgressBar.Value = percentage;
-                    ProgressPercentageText.Text = $"{percentage:F0}%";
-                }
-                else
-                {
-                    MappingProgressBar.Value = 0;
-                    ProgressPercentageText.Text = "0%";
-                }
-            }
-            catch (Exception)
-            {
-                MappingProgressBar.Value = 0;
-                ProgressPercentageText.Text = "0%";
-            }
-        }
-
-        private void SearchMappings_TextChanged(object sender, TextChangedEventArgs e)
-        {
-            LoadExistingMappings();
+            UpdateStatus($"Lastet {mappings.Count} eksisterende mappings");
         }
 
         private void ClearAllMappings_Click(object sender, RoutedEventArgs e)
         {
             var result = MessageBox.Show(
-                "Er du sikker på at du vil slette ALLE mappings?\n\nDenne handlingen kan ikke angres.",
+                "Er du sikker på at du vil slette ALLE mappings?",
                 "Bekreft sletting av alle mappings",
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Warning);
@@ -152,10 +85,26 @@ namespace WpfEGridApp
                     _mappingManager.RemoveMapping(mapping.ExcelReference);
                 }
                 LoadExistingMappings();
-                UpdateProgress();
                 UpdateStatus("Alle mappings slettet");
             }
         }
+
+        private Queue<string> _specificMappingQueue;
+        private bool _isInSpecificMappingMode = false;
+
+        // Kø for rekke-mapping (bulk mapping av terminalblokker)
+        private Queue<string> _rangeMappingQueue;
+        private bool _isInRangeMappingMode = false;
+
+        // ==== Bulk mapping mode state ====
+        // Brukes når brukeren vil mappe et helt intervall av rekkeklemmer til
+        // flere grid-celler i ett steg.  Når aktiv vil RangeMapping-knappen
+        // trigge StartBulkMappingSelection i MainWindow, FinishBulkMappingButton
+        // vises, og OnBulkMappingCompleted kalles når brukeren er ferdig.
+        private bool _isBulkMappingMode = false;
+        private string _bulkPrefix;
+        private int _bulkStart;
+        private int _bulkEnd;
 
         private void StartSpecificMapping_Click(object sender, RoutedEventArgs e)
         {
@@ -262,12 +211,199 @@ namespace WpfEGridApp
             this.WindowState = WindowState.Normal;
             this.Activate();
             LoadExistingMappings();
-            UpdateProgress();
 
             // Continue with next mapping immediately
             System.Threading.Tasks.Task.Delay(100).ContinueWith(_ =>
             {
                 this.Dispatcher.Invoke(() => ProcessNextSpecificMapping());
+            });
+        }
+
+        /// <summary>
+        /// Starter bulk-mapping av et intervall av terminalblokker (f.eks. "X2:21-100").
+        /// I stedet for å mappe én og én referanse sekvensielt, åpnes hovedvinduet i
+        /// multi-valgmodus der brukeren kan klikke på flere grid-celler som representerer
+        /// den fysiske skinnen. Når brukeren fullfører valget via "Ferdig bulk mapping",
+        /// lagres én eneste BulkRangeMapping med alle de valgte cellene.
+        /// </summary>
+        private void StartRangeMapping_Click(object sender, RoutedEventArgs e)
+        {
+            var text = NewExcelReference.Text?.Trim();
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                UpdateStatus("Skriv inn prefiks eller intervall først");
+                return;
+            }
+
+            // Gjenkjenn formatet PREFIX:START-END eller PREFIX:NUMMER
+            var rangeRegex = new Regex(@"^([A-Za-z]+\d+):(\d+)(?:-(\d+))?$");
+            var match = rangeRegex.Match(text);
+            if (!match.Success)
+            {
+                MessageBox.Show("Ugyldig format. Bruk f.eks. X2:21-100 eller X2:21", "Feil format",
+                                MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            var prefix = match.Groups[1].Value;
+            var startStr = match.Groups[2].Value;
+            var endStr = match.Groups[3].Success ? match.Groups[3].Value : null;
+
+            if (!int.TryParse(startStr, out var startNum))
+            {
+                MessageBox.Show("Startnummeret kunne ikke tolkes", "Feil", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            int endNum;
+            if (string.IsNullOrEmpty(endStr))
+            {
+                endNum = startNum;
+            }
+            else if (!int.TryParse(endStr, out endNum))
+            {
+                MessageBox.Show("Sluttnummeret kunne ikke tolkes", "Feil", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            if (endNum < startNum)
+            {
+                MessageBox.Show("Sluttnummeret må være større eller lik startnummeret", "Feil", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            // Sjekk om alle referanser i intervallet allerede er mappet
+            bool allMapped = true;
+            for (int i = startNum; i <= endNum; i++)
+            {
+                string r = $"{prefix}:{i}";
+                if (!_mappingManager.HasMapping(r))
+                {
+                    allMapped = false;
+                    break;
+                }
+            }
+            if (allMapped)
+            {
+                MessageBox.Show("Alle referanser i intervallet er allerede mappet.", "Ingen å mappe",
+                                MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            // Start bulk mapping modus
+            _isBulkMappingMode = true;
+            _bulkPrefix = prefix;
+            _bulkStart = startNum;
+            _bulkEnd = endNum;
+            FinishBulkMappingButton.Visibility = Visibility.Visible;
+
+            UpdateStatus($"Bulk mapping: velg grid-celler for {prefix}:{startNum}-{endNum}. Klikk på 'Ferdig bulk mapping' når du er ferdig.");
+
+            // Inform the user via a dialog so they understand that the bulk mapping
+            // selection happens in the main window.  This message appears
+            // before the window is minimized so the user sees it.
+            MessageBox.Show(
+                "Bulk mapping startet. Gå tilbake til hovedvinduet og klikk på en eller flere T/B-celler for å velge posisjoner.\n\n" +
+                "Når du er ferdig, klikk på 'Ferdig bulk mapping' i hovedvinduet for å fullføre.",
+                "Bulk mapping",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+
+            // Start bulk selection i MainWindow
+            _mainWindow.StartBulkMappingSelection(prefix, startNum, endNum, OnBulkMappingCompleted);
+
+            // Minimer dette vinduet slik at brukeren kan klikke på gridet
+            this.WindowState = WindowState.Minimized;
+        }
+
+        /// <summary>
+        /// Behandler neste referanse i rekke-mapping modus. Kalles etter at en mapping er fullført.
+        /// </summary>
+        private void ProcessNextRangeMapping()
+        {
+            if (!_isInRangeMappingMode || _rangeMappingQueue == null || _rangeMappingQueue.Count == 0)
+            {
+                EndRangeMapping();
+                return;
+            }
+            var currentRef = _rangeMappingQueue.Dequeue();
+            _mainWindow.StartInteractiveMapping(currentRef, "", OnRangeMappingCompleted);
+            UpdateStatus($"Mapper '{currentRef}' - {_rangeMappingQueue.Count} gjenstår");
+        }
+
+        private void OnRangeMappingCompleted(string reference, string ignore)
+        {
+            // Oppdater liste og gjenoppta state (men ikke fullfør enda)
+            LoadExistingMappings();
+            // Fortsett med neste mapping via dispatcher etter en liten delay
+            System.Threading.Tasks.Task.Delay(100).ContinueWith(_ =>
+            {
+                this.Dispatcher.Invoke(() => ProcessNextRangeMapping());
+            });
+        }
+
+        private void EndRangeMapping()
+        {
+            _isInRangeMappingMode = false;
+            _rangeMappingQueue = null;
+            _mainWindow.EndMappingMode();
+            this.WindowState = WindowState.Normal;
+            this.Activate();
+            NewExcelReference.Clear();
+            UpdateStatus("Rekke-mapping fullført");
+        }
+
+        /// <summary>
+        /// Fullfører bulk-mapping når brukeren klikker på "Ferdig bulk mapping"-knappen.
+        /// Denne metoden instruerer MainWindow om å avslutte bulkselection og
+        /// trigger deretter vår callback via OnBulkMappingCompleted.
+        /// </summary>
+        private void FinishBulkMappingButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                // Signaliser til MainWindow at brukeren er ferdig med å velge celler
+                _mainWindow?.FinishBulkMappingSelection();
+            }
+            catch (Exception ex)
+            {
+                UpdateStatus($"Feil ved fullføring av bulk mapping: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Callback som mottar resultatet av en bulk-mapping fra MainWindow.  Her
+        /// konverteres de valgte cellene til en liste av CellCoord og lagres i
+        /// mappingManager.  Etterpå oppdateres UI og status og bulk-modus
+        /// avsluttes.
+        /// </summary>
+        private void OnBulkMappingCompleted(string prefix, int startNumber, int endNumber, List<(int Row, int Col)> cells)
+        {
+            // Kjør på UI-tråden for å sikre at vi kan oppdatere kontroller
+            this.Dispatcher.Invoke(() =>
+            {
+                try
+                {
+                    // Lagre bulk mapping til fil via manager.  Parameteren cells er en liste
+                    // av (Row, Col)-par som AddBulkRangeMapping selv konverterer til
+                    // interne CellCoord-objekter og dedupliserer.
+                    // Pass the selected side (T/B) from MainWindow to the mapping manager
+                    bool selectedIsTop = _mainWindow.BulkMappingSelectedIsTop;
+                    _mappingManager.AddBulkRangeMapping(prefix, startNumber, endNumber, cells, selectedIsTop);
+
+                    // Oppdater UI: skjul knapp, last nye mappings og rydd input
+                    FinishBulkMappingButton.Visibility = Visibility.Collapsed;
+                    _isBulkMappingMode = false;
+                    NewExcelReference.Clear();
+                    LoadExistingMappings();
+                    this.WindowState = WindowState.Normal;
+                    this.Activate();
+                    UpdateStatus($"Bulk mapping fullført: {prefix}:{startNumber}-{endNumber} ({cells?.Count ?? 0} celler)");
+                }
+                catch (Exception ex)
+                {
+                    UpdateStatus($"Feil under lagring av bulk mapping: {ex.Message}");
+                }
             });
         }
 
@@ -277,7 +413,6 @@ namespace WpfEGridApp
             _specificMappingQueue = null;
             _mainWindow.EndMappingMode();
             UpdateStatus("Spesifikk mapping fullført");
-            UpdateProgress();
 
             this.WindowState = WindowState.Normal;
             this.Activate();
@@ -285,10 +420,19 @@ namespace WpfEGridApp
 
         protected override void OnKeyDown(System.Windows.Input.KeyEventArgs e)
         {
-            if (e.Key == System.Windows.Input.Key.Escape && _isInSpecificMappingMode)
+            if (e.Key == System.Windows.Input.Key.Escape)
             {
-                EndSpecificMappingMode();
-                e.Handled = true;
+                // Avbryt spesifikk mapping eller rekke-mapping med Esc
+                if (_isInSpecificMappingMode)
+                {
+                    EndSpecificMappingMode();
+                    e.Handled = true;
+                }
+                else if (_isInRangeMappingMode)
+                {
+                    EndRangeMapping();
+                    e.Handled = true;
+                }
             }
             base.OnKeyDown(e);
         }
@@ -311,7 +455,6 @@ namespace WpfEGridApp
         private void OnMappingCompleted(string reference, string ignore)
         {
             LoadExistingMappings();
-            UpdateProgress();
             NewExcelReference.Clear();
             this.WindowState = WindowState.Normal;
             this.Activate();
@@ -442,7 +585,6 @@ namespace WpfEGridApp
                 {
                     _mappingManager.RemoveMapping(excelReference);
                     LoadExistingMappings();
-                    UpdateProgress();
                     UpdateStatus($"Slettet mapping for {excelReference}");
                 }
             }
@@ -452,15 +594,8 @@ namespace WpfEGridApp
         {
             try
             {
-                ProcessingStatusText.Text = "Prosesserer...";
-                ProcessingStatusText.Foreground = System.Windows.Media.Brushes.Orange;
-
                 var processor = new ExcelConnectionProcessor(_mainWindow, _mappingManager);
                 var processedCount = processor.ProcessAllConnections();
-
-                ProcessingStatusText.Text = "Prosessering fullført";
-                ProcessingStatusText.Foreground = System.Windows.Media.Brushes.LightGreen;
-                LastProcessingResultText.Text = $"Prosesserte {processedCount} ledninger";
 
                 UpdateStatus($"Prosesserte {processedCount} ledninger");
                 MessageBox.Show($"Ferdig! Prosesserte {processedCount} ledninger automatisk.",
@@ -471,10 +606,6 @@ namespace WpfEGridApp
             }
             catch (Exception ex)
             {
-                ProcessingStatusText.Text = "Prosessering feilet";
-                ProcessingStatusText.Foreground = System.Windows.Media.Brushes.Red;
-                LastProcessingResultText.Text = $"Feil: {ex.Message}";
-
                 UpdateStatus($"Feil under prosessering: {ex.Message}");
                 MessageBox.Show($"Feil under automatisk prosessering: {ex.Message}", "Feil",
                                MessageBoxButton.OK, MessageBoxImage.Error);
@@ -485,109 +616,16 @@ namespace WpfEGridApp
         {
             try
             {
-                ProcessingStatusText.Text = "Kjører test...";
-                ProcessingStatusText.Foreground = System.Windows.Media.Brushes.Orange;
-
                 var processor = new ExcelConnectionProcessor(_mainWindow, _mappingManager);
                 var result = processor.TestProcessing();
-
-                ProcessingStatusText.Text = "Test fullført";
-                ProcessingStatusText.Foreground = System.Windows.Media.Brushes.LightGreen;
 
                 var message = $"Test resultat:\n\n{result}";
                 MessageBox.Show(message, "Test prosessering", MessageBoxButton.OK, MessageBoxImage.Information);
             }
             catch (Exception ex)
             {
-                ProcessingStatusText.Text = "Test feilet";
-                ProcessingStatusText.Foreground = System.Windows.Media.Brushes.Red;
-                LastProcessingResultText.Text = $"Feil: {ex.Message}";
-
                 UpdateStatus($"Feil under test: {ex.Message}");
                 MessageBox.Show($"Feil under test prosessering: {ex.Message}", "Feil",
-                               MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-
-        private void ExportMappings_Click(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                var saveFileDialog = new SaveFileDialog
-                {
-                    Filter = "JSON Files (*.json)|*.json|All Files (*.*)|*.*",
-                    Title = "Eksporter Mappings"
-                };
-
-                if (saveFileDialog.ShowDialog() == true)
-                {
-                    var mappings = _mappingManager.GetAllMappings();
-                    var json = JsonSerializer.Serialize(mappings, new JsonSerializerOptions
-                    {
-                        WriteIndented = true
-                    });
-                    File.WriteAllText(saveFileDialog.FileName, json);
-                    UpdateStatus($"Eksporterte {mappings.Count} mappings til {Path.GetFileName(saveFileDialog.FileName)}");
-                }
-            }
-            catch (Exception ex)
-            {
-                UpdateStatus($"Feil ved eksport: {ex.Message}");
-                MessageBox.Show($"Feil ved eksport av mappings: {ex.Message}", "Feil",
-                               MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-
-        private void ImportMappings_Click(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                var openFileDialog = new OpenFileDialog
-                {
-                    Filter = "JSON Files (*.json)|*.json|All Files (*.*)|*.*",
-                    Title = "Importer Mappings"
-                };
-
-                if (openFileDialog.ShowDialog() == true)
-                {
-                    var json = File.ReadAllText(openFileDialog.FileName);
-                    var mappings = JsonSerializer.Deserialize<List<ComponentMapping>>(json);
-
-                    if (mappings != null)
-                    {
-                        var result = MessageBox.Show(
-                            $"Dette vil erstatte alle eksisterende mappings med {mappings.Count} mappings fra filen.\n\nFortsette?",
-                            "Bekreft import",
-                            MessageBoxButton.YesNo,
-                            MessageBoxImage.Question);
-
-                        if (result == MessageBoxResult.Yes)
-                        {
-                            // Clear existing mappings
-                            var existingMappings = _mappingManager.GetAllMappings().ToList();
-                            foreach (var mapping in existingMappings)
-                            {
-                                _mappingManager.RemoveMapping(mapping.ExcelReference);
-                            }
-
-                            // Add imported mappings
-                            foreach (var mapping in mappings)
-                            {
-                                _mappingManager.AddMapping(mapping.ExcelReference, mapping.GridRow,
-                                                         mapping.GridColumn, mapping.DefaultToBottom);
-                            }
-
-                            LoadExistingMappings();
-                            UpdateProgress();
-                            UpdateStatus($"Importerte {mappings.Count} mappings fra {Path.GetFileName(openFileDialog.FileName)}");
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                UpdateStatus($"Feil ved import: {ex.Message}");
-                MessageBox.Show($"Feil ved import av mappings: {ex.Message}", "Feil",
                                MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
@@ -599,8 +637,7 @@ namespace WpfEGridApp
 
         private void UpdateStatus(string message)
         {
-            StatusText.Text = message;
-            TimestampText.Text = DateTime.Now.ToString("HH:mm:ss");
+            StatusText.Text = $"{DateTime.Now:HH:mm:ss} - {message}";
         }
     }
 
