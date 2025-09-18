@@ -246,6 +246,8 @@
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
 
@@ -269,12 +271,17 @@
                             Style="{StaticResource RoundedButtonStyle}"
                             ToolTip="Choose an Excel file to log measurements" Grid.Column="7"/>
 
+                    <Button Content="Refresh Excel" Click="RefreshExcel_Click" Width="110"
+                            Style="{StaticResource RoundedButtonStyle}"
+                            Background="#FF5588CC"
+                            ToolTip="Refresh Excel data and find next measurement row" Grid.Column="8"/>
+
                     <Button Content="Delete Last" Click="DeleteLastMeasurement_Click" Width="110"
                             Style="{StaticResource RoundedButtonStyle}"
-                            ToolTip="Remove the last measurement from the Excel file" Grid.Column="8"/>
+                            ToolTip="Remove the last measurement from the Excel file" Grid.Column="9"/>
 
                     <!-- Eksport- og reset-knapper i en horisontal StackPanel -->
-                    <StackPanel Grid.Column="9" Orientation="Horizontal" HorizontalAlignment="Left">
+                    <StackPanel Grid.Column="10" Orientation="Horizontal" HorizontalAlignment="Left">
                         <Button x:Name="ExportNordButton" Content="Eksporter data til Nord"
                                 Click="ExportDataToNord_Click"
                                 Style="{StaticResource RoundedButtonStyle}"
@@ -295,23 +302,23 @@
                     <Button Content="Component Mapping" Click="OpenComponentMapping_Click"
                             Style="{StaticResource RoundedButtonStyle}"
                             Background="#FFFF8C00"
-                            ToolTip="Set up component mappings for automatic measurements" Grid.Column="10" Width="160"/>
+                            ToolTip="Set up component mappings for automatic measurements" Grid.Column="11" Width="160"/>
 
                     <Button Content="Automatisk måling av alle" Click="AutomaticMeasureAll_Click"
                             Style="{StaticResource RoundedButtonStyle}"
                             Background="{StaticResource AccentBrush}"
-                            ToolTip="Automatically measure all connections using component mappings" Grid.Column="11" Width="190"/>
+                            ToolTip="Automatically measure all connections using component mappings" Grid.Column="12" Width="190"/>
 
                     <!-- Toggle cell removal mode -->
                     <Button x:Name="RemoveCellsButton" Content="Fjern celler" Click="RemoveCellsButton_Click"
                             Style="{StaticResource RoundedButtonStyle}"
                             Background="#FFDD5555"
                             ToolTip="Klikk for å fjerne vanlige celler fra gridet"
-                            Grid.Column="12" Width="130"/>
+                            Grid.Column="13" Width="130"/>
 
                     <!-- Tekst som viser resultatmeldinger -->
                     <TextBlock x:Name="ResultText" Style="{StaticResource ResultTextStyle}"
-                               Grid.Column="13" HorizontalAlignment="Right" Margin="0,0,15,0" FontSize="14"/>
+                               Grid.Column="15" HorizontalAlignment="Right" Margin="0,0,15,0" FontSize="14"/>
                 </Grid>
             </ScrollViewer>
 

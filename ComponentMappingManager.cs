@@ -63,6 +63,11 @@ namespace WpfEGridApp
                     return true;
             }
 
+            // Also check bulk mappings
+            var bulkMapping = GetBulkRangeMappingForReference(cleanRef);
+            if (bulkMapping != null)
+                return true;
+
             return false;
         }
 
@@ -236,6 +241,33 @@ namespace WpfEGridApp
         public List<BulkRangeMapping> GetAllBulkRanges() => _bulkRangeMappings.ToList();
 
         /// <summary>
+        /// Get all mappings including bulk range mappings for display
+        /// </summary>
+        public List<ComponentMapping> GetAllMappingsIncludingBulk()
+        {
+            var allMappings = new List<ComponentMapping>();
+
+            // Add regular mappings
+            allMappings.AddRange(_mappings.Values);
+
+            // Add bulk mappings as virtual mappings for display
+            foreach (var bulk in _bulkRangeMappings)
+            {
+                // Create a display mapping for the bulk range
+                var displayMapping = new ComponentMapping
+                {
+                    ExcelReference = $"{bulk.Prefix}:{bulk.StartIndex}-{bulk.EndIndex}",
+                    GridRow = -99, // Special marker for bulk
+                    GridColumn = bulk.Cells.Count, // Number of cells selected
+                    DefaultToBottom = !bulk.SelectedIsTop
+                };
+                allMappings.Add(displayMapping);
+            }
+
+            return allMappings;
+        }
+
+        /// <summary>
         /// Returnerer bulk-range som en gitt referanse tilhører.  Tar høyde
         /// for at referansen kan inneholde stjerne (*), men ser bort fra
         /// den ved sammenligning.  Returnerer null hvis referansen ikke
@@ -306,6 +338,27 @@ namespace WpfEGridApp
         public void RemoveMapping(string excelReference)
         {
             var cleanRef = excelReference.Trim();
+
+            // Check if it's a bulk mapping reference
+            if (cleanRef.Contains("-"))
+            {
+                // Parse bulk mapping format "X2:21-100"
+                var parts = cleanRef.Split(':');
+                if (parts.Length == 2)
+                {
+                    var prefix = parts[0];
+                    var rangeParts = parts[1].Split('-');
+                    if (rangeParts.Length == 2 &&
+                        int.TryParse(rangeParts[0], out var start) &&
+                        int.TryParse(rangeParts[1], out var end))
+                    {
+                        RemoveBulkRangeMapping(prefix, start, end);
+                        return;
+                    }
+                }
+            }
+
+            // Regular mapping removal
             if (_mappings.Remove(cleanRef))
             {
                 SaveMappings();
@@ -323,9 +376,17 @@ namespace WpfEGridApp
                 return false;
 
             var cleanRef = reference.Trim();
-            return _mappings.ContainsKey(cleanRef) ||
-                   _mappings.Keys.Any(key => key.EndsWith(":") && cleanRef.StartsWith(key, StringComparison.OrdinalIgnoreCase)) ||
-                   _mappings.Keys.Any(key => cleanRef.Contains(key, StringComparison.OrdinalIgnoreCase));
+
+            // Check regular mappings
+            if (_mappings.ContainsKey(cleanRef) ||
+                _mappings.Keys.Any(key => key.EndsWith(":") && cleanRef.StartsWith(key, StringComparison.OrdinalIgnoreCase)) ||
+                _mappings.Keys.Any(key => cleanRef.Contains(key, StringComparison.OrdinalIgnoreCase)))
+            {
+                return true;
+            }
+
+            // Check bulk mappings
+            return GetBulkRangeMappingForReference(cleanRef) != null;
         }
 
         public List<ComponentMapping> GetAllMappings()
@@ -368,6 +429,5 @@ namespace WpfEGridApp
                 _mappings = new Dictionary<string, ComponentMapping>();
             }
         }
-
     }
 }

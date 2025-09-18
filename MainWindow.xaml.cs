@@ -380,6 +380,9 @@ namespace WpfEGridApp
             }
         }
 
+        // Fortsetter i del 2...
+        // Del 2 av MainWindow.xaml.cs - Versjon 2.0
+
         public void EndMappingMode()
         {
             _isInMappingMode = false;
@@ -444,6 +447,7 @@ namespace WpfEGridApp
                         if (_bulkMappingSelectedIsTop == null)
                         {
                             _bulkMappingSelectedIsTop = clickedIsTop;
+                            BulkMappingSelectedIsTop = clickedIsTop;
                         }
                         else if (_bulkMappingSelectedIsTop != clickedIsTop)
                         {
@@ -681,11 +685,11 @@ namespace WpfEGridApp
             }
 
             // Special handling when both points resolve to the same physical cell.
-            // In this case we always want the distance to be 300 mm regardless of
+            // In this case we always want the distance to be 300 mm regardless of
             // whether the points are regular cells, motors or doors.  PathFinder
             // would otherwise return a zero-length path which, combined with the
             // existing compensation logic, yields much larger values for motors
-            // and doors (e.g. 1050 mm).  By overriding here we provide a
+            // and doors (e.g. 1050 mm).  By overriding here we provide a
             // consistent result for identical start and end points.
             if (startCell.Row == endCell.Row && startCell.Col == endCell.Col)
             {
@@ -718,7 +722,7 @@ namespace WpfEGridApp
             // (start) + path distance + 200 mm (end) and NOT include any extra
             // compensation or constant.  For other combinations (involving motors
             // or doors) we preserve the existing logic with extra adjustments and
-            // the additional 50 mm.
+            // the additional 50 mm.
             double baseDistance = PathFinder.CalculateDistance(path, endsInSpecial, HasHorizontalNeighbor);
             double totalDistance;
             bool startIsButton = startPoint is Button;
@@ -731,7 +735,7 @@ namespace WpfEGridApp
             else
             {
                 // At least one point is a motor or door; use existing compensation and
-                // add the constant 50 mm as originally implemented.
+                // add the constant 50 mm as originally implemented.
                 totalDistance = baseDistance + extraDistance + 50;
             }
             HighlightPath(path);
@@ -871,6 +875,32 @@ namespace WpfEGridApp
             mappingWindow.Show();
         }
 
+        // NY METODE - Refresh Excel knapp
+        private void RefreshExcel_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(SelectedExcelFile) || worksheet == null)
+                {
+                    MessageBox.Show("Velg først en Excel-fil", "Feil",
+                                   MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                // Find next available row by scanning from row 2
+                _currentExcelRow = 2;
+                FindNextAvailableRow();
+                UpdateExcelDisplayText();
+
+                ResultText.Text = $"Excel oppdatert - neste rad: {_currentExcelRow}";
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Feil under oppdatering: {ex.Message}", "Feil",
+                               MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
         public void StartInteractiveMapping(string excelReference, string description, Action<string, string> onCompleted)
         {
             _currentMappingReference = excelReference;
@@ -934,6 +964,7 @@ namespace WpfEGridApp
 
             // Reset selected side state for this bulk selection
             _bulkMappingSelectedIsTop = null;
+            BulkMappingSelectedIsTop = false;
 
             // Display instructions to the user
             MappingIndicatorText.Text = $"Bulk mapping: {prefix}:{startNumber}-{endNumber}. Velg flere celler i gridet.";
@@ -997,9 +1028,6 @@ namespace WpfEGridApp
             var endNumber = _bulkMappingEnd;
             var selectedCells = _bulkSelectedCells != null ? new List<(int Row, int Col)>(_bulkSelectedCells) : new List<(int, int)>();
 
-            // Set property to be used by mapping manager: default to true (T) if undefined
-            BulkMappingSelectedIsTop = _bulkMappingSelectedIsTop ?? true;
-
             // End bulk mapping mode and restore UI
             EndBulkMappingMode();
 
@@ -1033,6 +1061,8 @@ namespace WpfEGridApp
             _bulkMappingEnd = 0;
             _bulkSelectedCells = null;
             _bulkMappingCompletedCallback = null;
+            _bulkMappingSelectedIsTop = null;
+            BulkMappingSelectedIsTop = false;
 
             // Restore grid cell colours and enablement
             foreach (var cell in allCells.Values)
@@ -1722,6 +1752,10 @@ namespace WpfEGridApp
         }
     }
 
+    // Resten av koden forblir uendret (PathFinder, Cell, SpecialPoint, PriorityQueue, ExcelConnectionProcessor)
+    // Dette er i en egen fil som følger...
+    // Dette er fortsettelsen av MainWindow.xaml.cs - alle hjelpeklasser
+
     public static class PathFinder
     {
         public static List<Cell> FindShortestPath(Cell start, Cell end, Dictionary<(int, int), Cell> allCells, Func<int, int, bool> hasHorizontalNeighbor)
@@ -1845,7 +1879,7 @@ namespace WpfEGridApp
         }
     }
 
-    // BEHOLDT ORIGINAL ExcelConnectionProcessor som fungerte
+    // ExcelConnectionProcessor klassen med støtte for bulk mapping
     public class ExcelConnectionProcessor
     {
         private readonly MainWindow _mainWindow;
@@ -1903,12 +1937,7 @@ namespace WpfEGridApp
                         // Hvis begge referanser tilhører bulk‑range
                         if (bulkA != null && bulkB != null)
                         {
-                            // Samle kandidat-koordinater for hver referanse.  Hvis
-                            // referansen ender med en stjerne (*), skal den
-                            // mappes til motsatt side av bulk‑mappingens valgte
-                            // side.  Ellers brukes cellene som valgt av
-                            // brukeren.  Kandidatene filtreres mot allCells
-                            // slik at kun gyldige celler brukes.
+                            // Samle kandidat-koordinater for hver referanse
                             var candidateA = GetCandidateCellsForBulkReference(bulkA, cellB, allCells);
                             var candidateB = GetCandidateCellsForBulkReference(bulkB, cellC, allCells);
 
@@ -1916,6 +1945,7 @@ namespace WpfEGridApp
                             double connB = GetConnectionDistance(cellC, mappingB);
                             double maxDistance = 0;
 
+                            // Finn LENGSTE avstand mellom alle kombinasjoner
                             foreach (var posA in candidateA)
                             {
                                 foreach (var posB in candidateB)
@@ -1941,6 +1971,91 @@ namespace WpfEGridApp
 
                                     double total = pathDist + connA + connB + 50;
                                     maxDistance = Math.Max(maxDistance, total);
+                                }
+                            }
+
+                            if (maxDistance > 0)
+                            {
+                                _mainWindow.worksheet.Cells[row, 1].Value = maxDistance;
+                                processedCount++;
+                                continue;
+                            }
+                        }
+                        // Hvis en er bulk og den andre er vanlig mapping
+                        else if ((bulkA != null && mappingB != null) || (mappingA != null && bulkB != null))
+                        {
+                            double maxDistance = 0;
+
+                            if (bulkA != null && mappingB != null)
+                            {
+                                // A er bulk, B er vanlig
+                                var candidateA = GetCandidateCellsForBulkReference(bulkA, cellB, allCells);
+                                var posB = GetGridPositionFromMapping(mappingB);
+
+                                if (posB.HasValue)
+                                {
+                                    double connA = GetConnectionDistance(cellB, null);
+                                    double connB = GetConnectionDistance(cellC, mappingB);
+
+                                    foreach (var posA in candidateA)
+                                    {
+                                        if (posA.Row == posB.Value.Row && posA.Col == posB.Value.Col)
+                                        {
+                                            maxDistance = Math.Max(maxDistance, 300.0);
+                                            continue;
+                                        }
+
+                                        if (!allCells.TryGetValue((posA.Row, posA.Col), out var startCell) ||
+                                            !allCells.TryGetValue(posB.Value, out var endCell))
+                                            continue;
+
+                                        var path = PathFinder.FindShortestPath(startCell, endCell, allCells, _mainWindow.HasHorizontalNeighbor);
+                                        if (path != null && path.Count > 0)
+                                        {
+                                            double pathDist = 0;
+                                            for (int i = 1; i < path.Count - 1; i++)
+                                                pathDist += _mainWindow.HasHorizontalNeighbor(path[i].Row, path[i].Col) ? 100 : 50;
+
+                                            double total = pathDist + connA + connB + 50;
+                                            maxDistance = Math.Max(maxDistance, total);
+                                        }
+                                    }
+                                }
+                            }
+                            else if (mappingA != null && bulkB != null)
+                            {
+                                // A er vanlig, B er bulk
+                                var posA = GetGridPositionFromMapping(mappingA);
+                                var candidateB = GetCandidateCellsForBulkReference(bulkB, cellC, allCells);
+
+                                if (posA.HasValue)
+                                {
+                                    double connA = GetConnectionDistance(cellB, mappingA);
+                                    double connB = GetConnectionDistance(cellC, null);
+
+                                    foreach (var posB in candidateB)
+                                    {
+                                        if (posA.Value.Row == posB.Row && posA.Value.Col == posB.Col)
+                                        {
+                                            maxDistance = Math.Max(maxDistance, 300.0);
+                                            continue;
+                                        }
+
+                                        if (!allCells.TryGetValue(posA.Value, out var startCell) ||
+                                            !allCells.TryGetValue((posB.Row, posB.Col), out var endCell))
+                                            continue;
+
+                                        var path = PathFinder.FindShortestPath(startCell, endCell, allCells, _mainWindow.HasHorizontalNeighbor);
+                                        if (path != null && path.Count > 0)
+                                        {
+                                            double pathDist = 0;
+                                            for (int i = 1; i < path.Count - 1; i++)
+                                                pathDist += _mainWindow.HasHorizontalNeighbor(path[i].Row, path[i].Col) ? 100 : 50;
+
+                                            double total = pathDist + connA + connB + 50;
+                                            maxDistance = Math.Max(maxDistance, total);
+                                        }
+                                    }
                                 }
                             }
 
@@ -2024,7 +2139,6 @@ namespace WpfEGridApp
             return processedCount;
         }
 
-        // ORIGINAL GetGridPositionFromMapping som fungerte for B-mapping
         private (int Row, int Col)? GetGridPositionFromMapping(ComponentMapping mapping)
         {
             // Handle special points (Motors and Doors)
@@ -2042,7 +2156,7 @@ namespace WpfEGridApp
             }
             else
             {
-                // Handle bottom side mappings (negative rows) - DETTE FUNGERTE
+                // Handle bottom side mappings (negative rows)
                 if (mapping.GridRow < 0)
                 {
                     // Convert negative row back to positive for allCells lookup
@@ -2051,32 +2165,29 @@ namespace WpfEGridApp
                 }
                 else
                 {
-                    // LAGT TIL: Bedre håndtering av top side (T) mappings
-                    // Hvis det er top-side mapping, bruk direkte koordinater
-                    // Hvis DefaultToBottom er true, prøv å finne cellen under
+                    // Handle top side (T) mappings
                     int adjustedRow = mapping.GridRow;
-
                     var allCells = _mainWindow.GetAllCells();
 
-                    // Prøv først den eksakte posisjonen
+                    // Try the exact position first
                     if (allCells.ContainsKey((mapping.GridRow, mapping.GridColumn)))
                     {
                         return (mapping.GridRow, mapping.GridColumn);
                     }
 
-                    // Hvis DefaultToBottom, prøv raden under
+                    // If DefaultToBottom, try the row below
                     if (mapping.DefaultToBottom && allCells.ContainsKey((mapping.GridRow + 1, mapping.GridColumn)))
                     {
                         return (mapping.GridRow + 1, mapping.GridColumn);
                     }
 
-                    // Prøv raden over
+                    // Try the row above
                     if (allCells.ContainsKey((mapping.GridRow - 1, mapping.GridColumn)))
                     {
                         return (mapping.GridRow - 1, mapping.GridColumn);
                     }
 
-                    // Returner original hvis intet annet fungerer
+                    // Return original if nothing else works
                     return (mapping.GridRow, mapping.GridColumn);
                 }
             }
@@ -2118,14 +2229,7 @@ namespace WpfEGridApp
         /// Returns a list of candidate grid cell coordinates for a reference within a bulk
         /// range.  The returned coordinates depend on whether the reference ends
         /// with an asterisk (*), which indicates that the reference should be
-        /// mapped to the opposite side of the selected bulk mapping cells.  When
-        /// SelectedIsTop is true (the user selected top-side cells), a star
-        /// reference maps to the row below each selected cell (the underside).
-        /// Conversely, when SelectedIsTop is false (bottom-side selected), a
-        /// star reference maps to the row above each selected cell (the top side).
-        /// Only coordinates that exist in the provided allCells dictionary are
-        /// returned.  If no opposite-side cells exist for a star reference,
-        /// the original selected cells are returned as a fallback.
+        /// mapped to the opposite side of the selected bulk mapping cells.
         /// </summary>
         private List<(int Row, int Col)> GetCandidateCellsForBulkReference(ComponentMappingManager.BulkRangeMapping bulkRange, string excelReference, Dictionary<(int, int), Cell> allCells)
         {
@@ -2142,11 +2246,7 @@ namespace WpfEGridApp
 
                 if (hasStar)
                 {
-                    // Star references map to the opposite side.  If the original
-                    // selection was top (T), the opposite side is row + 1.  If
-                    // the original selection was bottom (B), the opposite side
-                    // is row - 1.  Only add the coordinate if it exists in
-                    // allCells to avoid invalid positions (e.g., last row).
+                    // Star references map to the opposite side
                     int oppositeRow = selectedIsTop ? row + 1 : row - 1;
                     if (allCells.ContainsKey((oppositeRow, col)))
                     {
@@ -2163,9 +2263,7 @@ namespace WpfEGridApp
                 }
             }
 
-            // If no candidates were added (e.g., because the opposite side
-            // positions did not exist), fall back to the original selected
-            // cells so that we still have something to work with.
+            // If no candidates were added, fall back to the original selected cells
             if (result.Count == 0)
             {
                 foreach (var cell in bulkRange.Cells)
@@ -2188,6 +2286,7 @@ namespace WpfEGridApp
 
             var results = new List<string>();
             var allMappings = _mappingManager.GetAllMappings();
+            var bulkMappings = _mappingManager.GetAllBulkRanges();
             var usedRange = _mainWindow.worksheet.UsedRange;
 
             if (usedRange == null)
@@ -2196,7 +2295,8 @@ namespace WpfEGridApp
             var lastRow = Math.Min(usedRange.Rows.Count, 10);
 
             results.Add("=== TEST PROSESSERING ===\n");
-            results.Add($"Antall mappings: {allMappings.Count}");
+            results.Add($"Antall vanlige mappings: {allMappings.Count}");
+            results.Add($"Antall bulk mappings: {bulkMappings.Count}");
 
             foreach (var mapping in allMappings)
             {
@@ -2207,6 +2307,12 @@ namespace WpfEGridApp
                 else
                     results.Add($"  {mapping.ExcelReference} -> ({mapping.GridRow}, {mapping.GridColumn}) {(mapping.DefaultToBottom ? "(B)" : "(T)")}");
             }
+
+            foreach (var bulk in bulkMappings)
+            {
+                results.Add($"  BULK: {bulk.Prefix}:{bulk.StartIndex}-{bulk.EndIndex} -> {bulk.Cells.Count} celler ({(bulk.SelectedIsTop ? "T" : "B")})");
+            }
+
             results.Add("");
 
             for (int row = 2; row <= lastRow; row++)
@@ -2239,50 +2345,15 @@ namespace WpfEGridApp
 
                     var mappingA = _mappingManager.GetMapping(cellB);
                     var mappingB = _mappingManager.GetMapping(cellC);
+                    var bulkA = _mappingManager.GetBulkRangeMappingForReference(cellB);
+                    var bulkB = _mappingManager.GetBulkRangeMappingForReference(cellC);
 
-                    results.Add($"  Match A: {mappingA?.ExcelReference ?? "IKKE FUNNET"}");
-                    results.Add($"  Match B: {mappingB?.ExcelReference ?? "IKKE FUNNET"}");
+                    results.Add($"  Match A: {mappingA?.ExcelReference ?? (bulkA != null ? "BULK MAPPING" : "IKKE FUNNET")}");
+                    results.Add($"  Match B: {mappingB?.ExcelReference ?? (bulkB != null ? "BULK MAPPING" : "IKKE FUNNET")}");
 
-                    if (mappingA != null && mappingB != null)
+                    if ((mappingA != null || bulkA != null) && (mappingB != null || bulkB != null))
                     {
-                        var posA = GetGridPositionFromMapping(mappingA);
-                        var posB = GetGridPositionFromMapping(mappingB);
-
-                        results.Add($"  Pos A: {posA?.ToString() ?? "IKKE FUNNET"}");
-                        results.Add($"  Pos B: {posB?.ToString() ?? "IKKE FUNNET"}");
-
-                        if (posA.HasValue && posB.HasValue)
-                        {
-                            var allCells = _mainWindow.GetAllCells();
-                            if (allCells.TryGetValue(posA.Value, out var startCell) &&
-                                allCells.TryGetValue(posB.Value, out var endCell))
-                            {
-                                var path = PathFinder.FindShortestPath(startCell, endCell, allCells, _mainWindow.HasHorizontalNeighbor);
-                                if (path != null && path.Count > 0)
-                                {
-                                    double baseDistance = PathFinder.CalculateDistance(path, false, _mainWindow.HasHorizontalNeighbor);
-                                    double connectionDistanceA = GetConnectionDistance(cellB, mappingA);
-                                    double connectionDistanceB = GetConnectionDistance(cellC, mappingB);
-                                    // Include an additional 50 mm for the last cell to mirror the
-                                    // logic used in the main measurement routines.  This ensures
-                                    // that the test processing output matches the values
-                                    // generated during manual and automatic measurements.
-                                    double totalDistance = baseDistance + connectionDistanceA + connectionDistanceB + 50;
-                                    results.Add($"  BASE AVSTAND: {baseDistance:F2} mm");
-                                    results.Add($"  TILKOBLINGS A: {connectionDistanceA:F2} mm");
-                                    results.Add($"  TILKOBLINGS B: {connectionDistanceB:F2} mm");
-                                    results.Add($"  TOTAL AVSTAND: {totalDistance:F2} mm");
-                                }
-                                else
-                                {
-                                    results.Add("  -> INGEN STI FUNNET");
-                                }
-                            }
-                            else
-                            {
-                                results.Add("  -> CELLER IKKE FUNNET I GRID");
-                            }
-                        }
+                        results.Add("  -> KAN PROSESSERES");
                     }
                     else
                     {

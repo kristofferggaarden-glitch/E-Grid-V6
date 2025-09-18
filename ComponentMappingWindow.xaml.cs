@@ -37,12 +37,24 @@ namespace WpfEGridApp
         private void LoadExistingMappings()
         {
             MappingDisplayItems.Clear();
-            var mappings = _mappingManager.GetAllMappings();
+
+            // Get all mappings including bulk mappings
+            var mappings = _mappingManager.GetAllMappingsIncludingBulk();
 
             foreach (var mapping in mappings)
             {
                 string position;
-                if (mapping.GridRow == -1)
+
+                // Check if it's a bulk mapping (special marker -99)
+                if (mapping.GridRow == -99)
+                {
+                    position = $"BULK: {mapping.GridColumn} celler";
+                    if (mapping.DefaultToBottom)
+                        position += " (B)";
+                    else
+                        position += " (T)";
+                }
+                else if (mapping.GridRow == -1)
                 {
                     position = $"Motor {mapping.GridColumn - 1000}";
                 }
@@ -72,18 +84,27 @@ namespace WpfEGridApp
         private void ClearAllMappings_Click(object sender, RoutedEventArgs e)
         {
             var result = MessageBox.Show(
-                "Er du sikker på at du vil slette ALLE mappings?",
+                "Er du sikker på at du vil slette ALLE mappings (inkludert bulk mappings)?",
                 "Bekreft sletting av alle mappings",
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Warning);
 
             if (result == MessageBoxResult.Yes)
             {
+                // Clear regular mappings
                 var mappings = _mappingManager.GetAllMappings().ToList();
                 foreach (var mapping in mappings)
                 {
                     _mappingManager.RemoveMapping(mapping.ExcelReference);
                 }
+
+                // Clear bulk mappings
+                var bulkMappings = _mappingManager.GetAllBulkRanges().ToList();
+                foreach (var bulk in bulkMappings)
+                {
+                    _mappingManager.RemoveBulkRangeMapping(bulk.Prefix, bulk.StartIndex, bulk.EndIndex);
+                }
+
                 LoadExistingMappings();
                 UpdateStatus("Alle mappings slettet");
             }
@@ -116,7 +137,7 @@ namespace WpfEGridApp
 
             try
             {
-                var uniqueCells = GetUniqueExcelCells();
+                var uniqueCells = GetUniqueExcelCellsOrdered();
                 var unmappedCells = FilterUnmappedCells(uniqueCells);
 
                 if (unmappedCells.Count == 0)
@@ -137,6 +158,37 @@ namespace WpfEGridApp
             {
                 UpdateStatus($"Feil ved oppstart av spesifikk mapping: {ex.Message}");
             }
+        }
+
+        private List<string> GetUniqueExcelCellsOrdered()
+        {
+            var columnBCells = new HashSet<string>();
+            var columnCCells = new HashSet<string>();
+            var usedRange = _mainWindow.worksheet.UsedRange;
+            if (usedRange == null) return new List<string>();
+
+            var lastRow = usedRange.Rows.Count;
+
+            // Collect cells from column B and C separately
+            for (int row = 2; row <= lastRow; row++)
+            {
+                try
+                {
+                    var cellB = (_mainWindow.worksheet.Cells[row, 2] as Excel.Range)?.Value?.ToString() ?? "";
+                    var cellC = (_mainWindow.worksheet.Cells[row, 3] as Excel.Range)?.Value?.ToString() ?? "";
+
+                    if (!string.IsNullOrWhiteSpace(cellB)) columnBCells.Add(cellB.Trim());
+                    if (!string.IsNullOrWhiteSpace(cellC)) columnCCells.Add(cellC.Trim());
+                }
+                catch { }
+            }
+
+            // Return with column B cells first, then column C cells
+            var result = new List<string>();
+            result.AddRange(columnBCells.OrderBy(x => x));
+            result.AddRange(columnCCells.Except(columnBCells).OrderBy(x => x)); // Avoid duplicates
+
+            return result;
         }
 
         private List<string> GetUniqueExcelCells()
@@ -166,21 +218,10 @@ namespace WpfEGridApp
         private List<string> FilterUnmappedCells(List<string> cells)
         {
             var unmappedCells = new List<string>();
-            var existingMappings = _mappingManager.GetAllMappings();
 
             foreach (var cell in cells)
             {
-                bool isMapped = false;
-                foreach (var mapping in existingMappings)
-                {
-                    if (cell.Contains(mapping.ExcelReference, StringComparison.OrdinalIgnoreCase))
-                    {
-                        isMapped = true;
-                        break;
-                    }
-                }
-
-                if (!isMapped)
+                if (!_mappingManager.IsReferenceMapped(cell))
                 {
                     unmappedCells.Add(cell);
                 }
@@ -269,24 +310,6 @@ namespace WpfEGridApp
             if (endNum < startNum)
             {
                 MessageBox.Show("Sluttnummeret må være større eller lik startnummeret", "Feil", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
-
-            // Sjekk om alle referanser i intervallet allerede er mappet
-            bool allMapped = true;
-            for (int i = startNum; i <= endNum; i++)
-            {
-                string r = $"{prefix}:{i}";
-                if (!_mappingManager.HasMapping(r))
-                {
-                    allMapped = false;
-                    break;
-                }
-            }
-            if (allMapped)
-            {
-                MessageBox.Show("Alle referanser i intervallet er allerede mappet.", "Ingen å mappe",
-                                MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
@@ -384,6 +407,19 @@ namespace WpfEGridApp
             {
                 try
                 {
+                    if (cells == null || cells.Count == 0)
+                    {
+                        MessageBox.Show("Ingen celler ble valgt. Bulk mapping avbrutt.", "Ingen valg",
+                                       MessageBoxButton.OK, MessageBoxImage.Warning);
+                        FinishBulkMappingButton.Visibility = Visibility.Collapsed;
+                        _isBulkMappingMode = false;
+                        NewExcelReference.Clear();
+                        this.WindowState = WindowState.Normal;
+                        this.Activate();
+                        UpdateStatus("Bulk mapping avbrutt - ingen celler valgt");
+                        return;
+                    }
+
                     // Lagre bulk mapping til fil via manager.  Parameteren cells er en liste
                     // av (Row, Col)-par som AddBulkRangeMapping selv konverterer til
                     // interne CellCoord-objekter og dedupliserer.
@@ -398,7 +434,7 @@ namespace WpfEGridApp
                     LoadExistingMappings();
                     this.WindowState = WindowState.Normal;
                     this.Activate();
-                    UpdateStatus($"Bulk mapping fullført: {prefix}:{startNumber}-{endNumber} ({cells?.Count ?? 0} celler)");
+                    UpdateStatus($"Bulk mapping lagret: {prefix}:{startNumber}-{endNumber} ({cells.Count} celler)");
                 }
                 catch (Exception ex)
                 {
