@@ -28,6 +28,11 @@ namespace WpfEGridApp
         private bool _isInMappingMode = false;
         private Action<string, string> _mappingCompletedCallback;
 
+        // Sequential mapping mode state
+        private bool _isInSequentialMappingMode = false;
+        private Stack<string> _sequentialMappingUndoStack = new Stack<string>();
+        private ComponentMappingWindow _componentMappingWindow;
+
         // Indicates whether the application is in cell removal mode.  When true
         // regular cell clicks will remove the cell from the grid instead of
         // initiating a measurement.  The RemoveCellsButton toggles this flag.
@@ -337,6 +342,108 @@ namespace WpfEGridApp
             mappingCells[(-globalRow - 1, globalCol)] = new Cell(-globalRow - 1, globalCol, btnBottom); // Bottom side (negative)
         }
 
+        /// <summary>
+        /// Starts sequential mapping mode - shows undo and finish buttons
+        /// </summary>
+        public void StartSequentialMappingMode()
+        {
+            _isInSequentialMappingMode = true;
+            _sequentialMappingUndoStack.Clear();
+            SequentialMappingControls.Visibility = Visibility.Visible;
+            UpdateUndoButtonState();
+        }
+
+        /// <summary>
+        /// Ends sequential mapping mode - hides undo and finish buttons
+        /// </summary>
+        public void EndSequentialMappingMode()
+        {
+            _isInSequentialMappingMode = false;
+            _sequentialMappingUndoStack.Clear();
+            SequentialMappingControls.Visibility = Visibility.Collapsed;
+        }
+
+        /// <summary>
+        /// Updates the undo button enabled state based on stack contents
+        /// </summary>
+        private void UpdateUndoButtonState()
+        {
+            if (UndoMappingButton != null)
+            {
+                UndoMappingButton.IsEnabled = _sequentialMappingUndoStack.Count > 0;
+            }
+        }
+
+        /// <summary>
+        /// Records a mapping in the undo stack
+        /// </summary>
+        private void RecordMappingForUndo(string excelReference)
+        {
+            if (_isInSequentialMappingMode)
+            {
+                _sequentialMappingUndoStack.Push(excelReference);
+                UpdateUndoButtonState();
+            }
+        }
+
+        /// <summary>
+        /// Handles undo button click - removes the last mapping and puts it back in queue
+        /// </summary>
+        private void UndoMapping_Click(object sender, RoutedEventArgs e)
+        {
+            if (!_isInSequentialMappingMode || _sequentialMappingUndoStack.Count == 0)
+                return;
+
+            var lastMapping = _sequentialMappingUndoStack.Pop();
+
+            // Remove the mapping from storage
+            if (_componentMappingManager != null)
+            {
+                _componentMappingManager.RemoveMapping(lastMapping);
+
+                // Update the component mapping window if it exists and is loaded
+                if (_componentMappingWindow != null)
+                {
+                    try
+                    {
+                        _componentMappingWindow.LoadExistingMappings();
+                    }
+                    catch
+                    {
+                        // If the window is closed or disposed, ignore the error
+                    }
+                }
+            }
+
+            // Put the reference back at the front of the queue to be mapped again
+            if (_componentMappingWindow != null)
+            {
+                _componentMappingWindow.PutReferenceBackInQueue(lastMapping);
+            }
+
+            UpdateUndoButtonState();
+            ResultText.Text = $"Angret mapping for: {lastMapping} - klar for ny mapping";
+        }
+
+        /// <summary>
+        /// Handles finish button click - ends sequential mapping and opens component mapping window
+        /// </summary>
+        private void FinishMapping_Click(object sender, RoutedEventArgs e)
+        {
+            EndSequentialMappingMode();
+            EndMappingMode();
+
+            // Open component mapping window
+            if (_componentMappingWindow != null)
+            {
+                _componentMappingWindow.OnSequentialMappingFinished();
+            }
+            else
+            {
+                OpenComponentMapping_Click(sender, e);
+            }
+        }
+
         private void MappingCell_Click(object sender, RoutedEventArgs e)
         {
             // During bulk mapping selection we want mapping cell clicks to behave like
@@ -374,6 +481,9 @@ namespace WpfEGridApp
 
                     _componentMappingManager?.AddMapping(_currentMappingReference, actualRow, cell.Col, isBottomSide);
 
+                    // Record for undo
+                    RecordMappingForUndo(_currentMappingReference);
+
                     _mappingCompletedCallback?.Invoke(_currentMappingReference, "");
                     EndMappingMode();
                 }
@@ -389,9 +499,12 @@ namespace WpfEGridApp
             _currentMappingReference = "";
             _mappingCompletedCallback = null;
 
-            // Hide mapping indicator and cancel button
+            // Hide mapping indicator and cancel button (but not sequential mapping controls)
             MappingIndicator.Visibility = Visibility.Collapsed;
-            CancelMappingButton.Visibility = Visibility.Collapsed;
+            if (!_isInSequentialMappingMode)
+            {
+                CancelMappingButton.Visibility = Visibility.Collapsed;
+            }
 
             ResetCellColors();
             foreach (var cell in allCells.Values)
@@ -405,7 +518,10 @@ namespace WpfEGridApp
             foreach (var mp in motorPoints)
                 mp.Button.Background = (Brush)FindResource("OrangeButtonBrush");
 
-            ResultText.Text = "";
+            if (!_isInSequentialMappingMode)
+            {
+                ResultText.Text = "";
+            }
         }
 
         private void ResetCellColors()
@@ -560,6 +676,9 @@ namespace WpfEGridApp
                 int specialCol = 1000 + sectionIndex; // Special encoding for Door/Motor
 
                 _componentMappingManager?.AddMapping(_currentMappingReference, specialRow, specialCol, false);
+
+                // Record for undo
+                RecordMappingForUndo(_currentMappingReference);
 
                 _mappingCompletedCallback?.Invoke(_currentMappingReference, "");
                 EndMappingMode();
@@ -871,8 +990,9 @@ namespace WpfEGridApp
                 _componentMappingManager = new ComponentMappingManager(this, SelectedExcelFile);
             }
 
-            var mappingWindow = new ComponentMappingWindow(this, _componentMappingManager);
-            mappingWindow.Show();
+            // Store reference to the window
+            _componentMappingWindow = new ComponentMappingWindow(this, _componentMappingManager);
+            _componentMappingWindow.Show();
         }
 
         // NY METODE - Refresh Excel knapp
@@ -910,9 +1030,21 @@ namespace WpfEGridApp
             // Show mapping indicator with reference text
             MappingIndicatorText.Text = $"Mapper: {excelReference}";
             MappingIndicator.Visibility = Visibility.Visible;
-            CancelMappingButton.Visibility = Visibility.Visible;
 
-            ResultText.Text = $"Klikk på grid-posisjonen for {excelReference} (mellomrader, Door eller Motor knapper)";
+            // Show cancel button only if not in sequential mapping mode
+            if (!_isInSequentialMappingMode)
+            {
+                CancelMappingButton.Visibility = Visibility.Visible;
+            }
+
+            if (_isInSequentialMappingMode)
+            {
+                ResultText.Text = $"Klikk på grid-posisjonen for {excelReference}";
+            }
+            else
+            {
+                ResultText.Text = $"Klikk på grid-posisjonen for {excelReference} (mellomrader, Door eller Motor knapper)";
+            }
 
             // Highlight mapping cells
             foreach (var cell in mappingCells.Values)
@@ -1170,48 +1302,6 @@ namespace WpfEGridApp
             }
         }
 
-        private void AutomaticMeasureAll_Click(object sender, RoutedEventArgs e)
-        {
-            if (string.IsNullOrEmpty(SelectedExcelFile) || worksheet == null)
-            {
-                MessageBox.Show("Velg først en Excel-fil", "Feil",
-                               MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
-
-            if (_componentMappingManager == null)
-            {
-                MessageBox.Show("Du må først sette opp component mappings. Bruk 'Component Mapping' knappen.",
-                               "Mappings mangler", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
-
-            var result = MessageBox.Show(
-                "Dette vil automatisk måle alle ledninger som har component mappings. Fortsette?",
-                "Automatisk måling",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Question);
-
-            if (result == MessageBoxResult.Yes)
-            {
-                try
-                {
-                    var processor = new ExcelConnectionProcessor(this, _componentMappingManager);
-                    var processedCount = processor.ProcessAllConnections();
-
-                    MessageBox.Show($"Automatisk måling fullført!\nProsesserte {processedCount} ledninger.",
-                                   "Ferdig", MessageBoxButton.OK, MessageBoxImage.Information);
-
-                    UpdateExcelDisplayText();
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show($"Feil under automatisk måling: {ex.Message}", "Feil",
-                                   MessageBoxButton.OK, MessageBoxImage.Error);
-                }
-            }
-        }
-
         public void UpdateExcelDisplayText()
         {
             if (string.IsNullOrEmpty(SelectedExcelFile) || worksheet == null)
@@ -1380,6 +1470,8 @@ namespace WpfEGridApp
             {
                 RemoveCellsButton.Content = "Fjern celler";
             }
+            // Reset sequential mapping mode when rebuilding
+            EndSequentialMappingMode();
             UpdateExcelDisplayText();
         }
 

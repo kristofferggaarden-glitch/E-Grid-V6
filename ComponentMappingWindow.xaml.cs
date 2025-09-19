@@ -34,12 +34,16 @@ namespace WpfEGridApp
             UpdateStatus("Component mapping vindu åpnet");
         }
 
-        private void LoadExistingMappings()
+        public void LoadExistingMappings()
         {
             MappingDisplayItems.Clear();
 
             // Get all mappings including bulk mappings
             var mappings = _mappingManager.GetAllMappingsIncludingBulk();
+
+            // Debug: Se hva vi får tilbake
+            var bulkCount = mappings.Count(m => m.GridRow == -99);
+            MessageBox.Show($"DEBUG LoadExistingMappings:\nTotale mappings: {mappings.Count}\nBulk mappings funnet: {bulkCount}", "DEBUG Load Mappings", MessageBoxButton.OK, MessageBoxImage.Information);
 
             foreach (var mapping in mappings)
             {
@@ -53,6 +57,9 @@ namespace WpfEGridApp
                         position += " (B)";
                     else
                         position += " (T)";
+
+                    // Debug: Vis bulk mapping detaljer
+                    MessageBox.Show($"DEBUG: Bulk mapping funnet\nReference: {mapping.ExcelReference}\nPosition: {position}", "DEBUG Bulk Found", MessageBoxButton.OK, MessageBoxImage.Information);
                 }
                 else if (mapping.GridRow == -1)
                 {
@@ -78,7 +85,7 @@ namespace WpfEGridApp
                 });
             }
 
-            UpdateStatus($"Lastet {mappings.Count} eksisterende mappings");
+            UpdateStatus($"Lastet {mappings.Count} eksisterende mappings (inkludert {bulkCount} bulk mappings)");
         }
 
         private void ClearAllMappings_Click(object sender, RoutedEventArgs e)
@@ -150,7 +157,13 @@ namespace WpfEGridApp
                 _specificMappingQueue = new Queue<string>(unmappedCells);
                 _isInSpecificMappingMode = true;
 
+                // Notify MainWindow that we're starting sequential mapping mode
+                _mainWindow.StartSequentialMappingMode();
+
                 ProcessNextSpecificMapping();
+
+                // Minimize this window during sequential mapping
+                this.WindowState = WindowState.Minimized;
 
                 UpdateStatus($"Starter spesifikk mapping av {unmappedCells.Count} celler.");
             }
@@ -244,13 +257,12 @@ namespace WpfEGridApp
             _mainWindow.StartInteractiveMapping(currentCell, "", OnSpecificMappingCompleted);
 
             UpdateStatus($"Mapper '{currentCell}' - {_specificMappingQueue.Count} gjenstår");
-            this.WindowState = WindowState.Minimized;
         }
 
         private void OnSpecificMappingCompleted(string reference, string ignore)
         {
-            this.WindowState = WindowState.Normal;
-            this.Activate();
+            // DO NOT restore and activate window after each mapping
+            // Just update the mappings list
             LoadExistingMappings();
 
             // Continue with next mapping immediately
@@ -258,6 +270,41 @@ namespace WpfEGridApp
             {
                 this.Dispatcher.Invoke(() => ProcessNextSpecificMapping());
             });
+        }
+
+        /// <summary>
+        /// Called when sequential mapping mode is finished (user clicked "Ferdig")
+        /// </summary>
+        public void OnSequentialMappingFinished()
+        {
+            EndSpecificMappingMode();
+            this.WindowState = WindowState.Normal;
+            this.Activate();
+            LoadExistingMappings();
+        }
+
+        /// <summary>
+        /// Puts a reference back at the front of the sequential mapping queue
+        /// </summary>
+        public void PutReferenceBackInQueue(string reference)
+        {
+            if (_specificMappingQueue != null && _isInSpecificMappingMode)
+            {
+                // Create a new queue with the undone reference at the front
+                var newQueue = new Queue<string>();
+                newQueue.Enqueue(reference);
+
+                // Add all remaining items from the original queue
+                while (_specificMappingQueue.Count > 0)
+                {
+                    newQueue.Enqueue(_specificMappingQueue.Dequeue());
+                }
+
+                _specificMappingQueue = newQueue;
+
+                // Continue with the next mapping (which is now the undone reference)
+                ProcessNextSpecificMapping();
+            }
         }
 
         /// <summary>
@@ -402,6 +449,9 @@ namespace WpfEGridApp
         /// </summary>
         private void OnBulkMappingCompleted(string prefix, int startNumber, int endNumber, List<(int Row, int Col)> cells)
         {
+            // Debug: Sjekk at metoden blir kalt
+            MessageBox.Show($"DEBUG: OnBulkMappingCompleted kalt\nPrefix: {prefix}\nStart: {startNumber}\nEnd: {endNumber}\nCells count: {cells?.Count ?? 0}", "DEBUG Bulk Callback", MessageBoxButton.OK, MessageBoxImage.Information);
+
             // Kjør på UI-tråden for å sikre at vi kan oppdatere kontroller
             this.Dispatcher.Invoke(() =>
             {
@@ -420,18 +470,25 @@ namespace WpfEGridApp
                         return;
                     }
 
-                    // Lagre bulk mapping til fil via manager.  Parameteren cells er en liste
-                    // av (Row, Col)-par som AddBulkRangeMapping selv konverterer til
-                    // interne CellCoord-objekter og dedupliserer.
-                    // Pass the selected side (T/B) from MainWindow to the mapping manager
+                    // Debug: Sjekk side-informasjon
                     bool selectedIsTop = _mainWindow.BulkMappingSelectedIsTop;
+                    MessageBox.Show($"DEBUG: Før AddBulkRangeMapping\nSelectedIsTop: {selectedIsTop}\nMapping manager: {(_mappingManager != null ? "OK" : "NULL")}", "DEBUG Pre-Save", MessageBoxButton.OK, MessageBoxImage.Information);
+
+                    // Lagre bulk mapping til fil via manager
                     _mappingManager.AddBulkRangeMapping(prefix, startNumber, endNumber, cells, selectedIsTop);
 
-                    // Oppdater UI: skjul knapp, last nye mappings og rydd input
+                    // Debug: Sjekk at lagring er ferdig
+                    var allMappings = _mappingManager.GetAllMappingsIncludingBulk();
+                    MessageBox.Show($"DEBUG: Etter AddBulkRangeMapping\nTotale mappings: {allMappings.Count}\nBulk mappings: {_mappingManager.GetAllBulkRanges().Count}", "DEBUG Post-Save", MessageBoxButton.OK, MessageBoxImage.Information);
+
+                    // Oppdater UI
                     FinishBulkMappingButton.Visibility = Visibility.Collapsed;
                     _isBulkMappingMode = false;
                     NewExcelReference.Clear();
+
+                    // Ensure the mappings list is updated to show the new bulk mapping
                     LoadExistingMappings();
+
                     this.WindowState = WindowState.Normal;
                     this.Activate();
                     UpdateStatus($"Bulk mapping lagret: {prefix}:{startNumber}-{endNumber} ({cells.Count} celler)");
@@ -439,6 +496,7 @@ namespace WpfEGridApp
                 catch (Exception ex)
                 {
                     UpdateStatus($"Feil under lagring av bulk mapping: {ex.Message}");
+                    MessageBox.Show($"Feil under lagring av bulk mapping: {ex.Message}", "Feil", MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             });
         }
@@ -448,10 +506,8 @@ namespace WpfEGridApp
             _isInSpecificMappingMode = false;
             _specificMappingQueue = null;
             _mainWindow.EndMappingMode();
+            _mainWindow.EndSequentialMappingMode();
             UpdateStatus("Spesifikk mapping fullført");
-
-            this.WindowState = WindowState.Normal;
-            this.Activate();
         }
 
         protected override void OnKeyDown(System.Windows.Input.KeyEventArgs e)
@@ -602,7 +658,13 @@ namespace WpfEGridApp
             _specificMappingQueue = new Queue<string>(selectedRefs);
             _isInSpecificMappingMode = true;
 
+            // Notify MainWindow that we're starting sequential mapping mode
+            _mainWindow.StartSequentialMappingMode();
+
             ProcessNextSpecificMapping();
+
+            // Minimize this window during sequential mapping
+            this.WindowState = WindowState.Minimized;
 
             UpdateStatus($"Starter mapping av {selectedRefs.Count} valgte referanser");
         }

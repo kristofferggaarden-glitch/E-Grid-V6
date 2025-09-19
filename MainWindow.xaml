@@ -13,7 +13,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:WpfEGridApp"
         Title="E-Grid Application"
-        Height="800" Width="1413"
+        Height="800" Width="1931"
         MinHeight="700" MinWidth="1200"
         Background="#FF1A2526"
         FontFamily="Inter, Segoe UI" FontSize="14">
@@ -247,7 +247,6 @@
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
 
@@ -304,21 +303,16 @@
                             Background="#FFFF8C00"
                             ToolTip="Set up component mappings for automatic measurements" Grid.Column="11" Width="160"/>
 
-                    <Button Content="Automatisk måling av alle" Click="AutomaticMeasureAll_Click"
-                            Style="{StaticResource RoundedButtonStyle}"
-                            Background="{StaticResource AccentBrush}"
-                            ToolTip="Automatically measure all connections using component mappings" Grid.Column="12" Width="190"/>
-
                     <!-- Toggle cell removal mode -->
                     <Button x:Name="RemoveCellsButton" Content="Fjern celler" Click="RemoveCellsButton_Click"
                             Style="{StaticResource RoundedButtonStyle}"
                             Background="#FFDD5555"
                             ToolTip="Klikk for å fjerne vanlige celler fra gridet"
-                            Grid.Column="13" Width="130"/>
+                            Grid.Column="12" Width="130"/>
 
                     <!-- Tekst som viser resultatmeldinger -->
                     <TextBlock x:Name="ResultText" Style="{StaticResource ResultTextStyle}"
-                               Grid.Column="15" HorizontalAlignment="Right" Margin="0,0,15,0" FontSize="14"/>
+                               Grid.Column="14" HorizontalAlignment="Right" Margin="0,0,15,0" FontSize="14"/>
                 </Grid>
             </ScrollViewer>
 
@@ -347,7 +341,36 @@
                                Text="Mapping:"/>
                 </Border>
 
-                <!-- Avbryt-knapp som vises når bruker er i interaktiv eller bulk mapping -->
+                <!-- Control buttons during sequential mapping mode -->
+                <StackPanel x:Name="SequentialMappingControls"
+                            Orientation="Horizontal"
+                            HorizontalAlignment="Right"
+                            VerticalAlignment="Top"
+                            Margin="8"
+                            Visibility="Collapsed">
+
+                    <Button x:Name="UndoMappingButton"
+                            Content="Angre"
+                            Style="{StaticResource RoundedButtonStyle}"
+                            Background="#FFFF8800"
+                            Width="80"
+                            Height="34"
+                            Margin="4"
+                            Click="UndoMapping_Click"
+                            ToolTip="Angre forrige mapping"/>
+
+                    <Button x:Name="FinishMappingButton"
+                            Content="Ferdig"
+                            Style="{StaticResource RoundedButtonStyle}"
+                            Background="#FF33AA33"
+                            Width="80"
+                            Height="34"
+                            Margin="4"
+                            Click="FinishMapping_Click"
+                            ToolTip="Fullfør sekvensiell mapping"/>
+                </StackPanel>
+
+                <!-- Avbryt-knapp som vises kun under interaktiv mapping (ikke sekvensiell) -->
                 <Button x:Name="CancelMappingButton"
                         Content="Avbryt"
                         Style="{StaticResource RoundedButtonStyle}"

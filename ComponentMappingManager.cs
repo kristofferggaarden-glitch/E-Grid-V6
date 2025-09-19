@@ -250,9 +250,15 @@ namespace WpfEGridApp
             // Add regular mappings
             allMappings.AddRange(_mappings.Values);
 
+            // Debug: Sjekk bulk mappings
+            MessageBox.Show($"DEBUG GetAllMappingsIncludingBulk:\nRegular mappings: {_mappings.Count}\nBulk ranges: {_bulkRangeMappings.Count}", "DEBUG Get All", MessageBoxButton.OK, MessageBoxImage.Information);
+
             // Add bulk mappings as virtual mappings for display
             foreach (var bulk in _bulkRangeMappings)
             {
+                // Debug: Vis hvert bulk mapping
+                MessageBox.Show($"DEBUG: Processing bulk mapping\nPrefix: {bulk.Prefix}\nRange: {bulk.StartIndex}-{bulk.EndIndex}\nCells: {bulk.Cells.Count}\nIsTop: {bulk.SelectedIsTop}", "DEBUG Bulk Item", MessageBoxButton.OK, MessageBoxImage.Information);
+
                 // Create a display mapping for the bulk range
                 var displayMapping = new ComponentMapping
                 {
@@ -264,6 +270,7 @@ namespace WpfEGridApp
                 allMappings.Add(displayMapping);
             }
 
+            MessageBox.Show($"DEBUG: Final mapping count: {allMappings.Count}", "DEBUG Final", MessageBoxButton.OK, MessageBoxImage.Information);
             return allMappings;
         }
 
@@ -303,10 +310,10 @@ namespace WpfEGridApp
                 });
                 File.WriteAllText(_bulkMappingFileName, json);
             }
-            catch
+            catch (Exception ex)
             {
-                // Ignorer skrivefeil; bruker vil bli varslet ved neste
-                // lasting hvis filen mangler eller er korrupt
+                MessageBox.Show($"Kunne ikke lagre bulk mappings: {ex.Message}", "Feil",
+                              MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
 
