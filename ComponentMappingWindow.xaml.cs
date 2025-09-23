@@ -41,10 +41,6 @@ namespace WpfEGridApp
             // Get all mappings including bulk mappings
             var mappings = _mappingManager.GetAllMappingsIncludingBulk();
 
-            // Debug: Se hva vi får tilbake
-            var bulkCount = mappings.Count(m => m.GridRow == -99);
-            MessageBox.Show($"DEBUG LoadExistingMappings:\nTotale mappings: {mappings.Count}\nBulk mappings funnet: {bulkCount}", "DEBUG Load Mappings", MessageBoxButton.OK, MessageBoxImage.Information);
-
             foreach (var mapping in mappings)
             {
                 string position;
@@ -57,9 +53,6 @@ namespace WpfEGridApp
                         position += " (B)";
                     else
                         position += " (T)";
-
-                    // Debug: Vis bulk mapping detaljer
-                    MessageBox.Show($"DEBUG: Bulk mapping funnet\nReference: {mapping.ExcelReference}\nPosition: {position}", "DEBUG Bulk Found", MessageBoxButton.OK, MessageBoxImage.Information);
                 }
                 else if (mapping.GridRow == -1)
                 {
@@ -85,7 +78,7 @@ namespace WpfEGridApp
                 });
             }
 
-            UpdateStatus($"Lastet {mappings.Count} eksisterende mappings (inkludert {bulkCount} bulk mappings)");
+            UpdateStatus($"Lastet {mappings.Count} eksisterende mappings");
         }
 
         private void ClearAllMappings_Click(object sender, RoutedEventArgs e)
@@ -449,9 +442,6 @@ namespace WpfEGridApp
         /// </summary>
         private void OnBulkMappingCompleted(string prefix, int startNumber, int endNumber, List<(int Row, int Col)> cells)
         {
-            // Debug: Sjekk at metoden blir kalt
-            MessageBox.Show($"DEBUG: OnBulkMappingCompleted kalt\nPrefix: {prefix}\nStart: {startNumber}\nEnd: {endNumber}\nCells count: {cells?.Count ?? 0}", "DEBUG Bulk Callback", MessageBoxButton.OK, MessageBoxImage.Information);
-
             // Kjør på UI-tråden for å sikre at vi kan oppdatere kontroller
             this.Dispatcher.Invoke(() =>
             {
@@ -470,16 +460,11 @@ namespace WpfEGridApp
                         return;
                     }
 
-                    // Debug: Sjekk side-informasjon
+                    // Get side information from MainWindow
                     bool selectedIsTop = _mainWindow.BulkMappingSelectedIsTop;
-                    MessageBox.Show($"DEBUG: Før AddBulkRangeMapping\nSelectedIsTop: {selectedIsTop}\nMapping manager: {(_mappingManager != null ? "OK" : "NULL")}", "DEBUG Pre-Save", MessageBoxButton.OK, MessageBoxImage.Information);
 
                     // Lagre bulk mapping til fil via manager
                     _mappingManager.AddBulkRangeMapping(prefix, startNumber, endNumber, cells, selectedIsTop);
-
-                    // Debug: Sjekk at lagring er ferdig
-                    var allMappings = _mappingManager.GetAllMappingsIncludingBulk();
-                    MessageBox.Show($"DEBUG: Etter AddBulkRangeMapping\nTotale mappings: {allMappings.Count}\nBulk mappings: {_mappingManager.GetAllBulkRanges().Count}", "DEBUG Post-Save", MessageBoxButton.OK, MessageBoxImage.Information);
 
                     // Oppdater UI
                     FinishBulkMappingButton.Visibility = Visibility.Collapsed;
