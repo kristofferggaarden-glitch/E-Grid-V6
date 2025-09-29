@@ -18,6 +18,18 @@ namespace WpfEGridApp
         public ObservableCollection<MappingDisplayItem> MappingDisplayItems { get; set; }
         public ObservableCollection<UnmappedReferenceItem> UnmappedReferences { get; set; }
 
+        private Queue<string> _specificMappingQueue;
+        private bool _isInSpecificMappingMode = false;
+        private bool _waitingForUserMapping = false;
+
+        private Queue<string> _rangeMappingQueue;
+        private bool _isInRangeMappingMode = false;
+
+        private bool _isBulkMappingMode = false;
+        private string _bulkPrefix;
+        private int _bulkStart;
+        private int _bulkEnd;
+
         public ComponentMappingWindow(MainWindow mainWindow, ComponentMappingManager mappingManager)
         {
             InitializeComponent();
@@ -37,36 +49,26 @@ namespace WpfEGridApp
         public void LoadExistingMappings()
         {
             MappingDisplayItems.Clear();
-
             var mappings = _mappingManager.GetAllMappingsIncludingBulk();
 
             foreach (var mapping in mappings)
             {
                 string position;
-
                 if (mapping.GridRow == -99)
                 {
                     position = $"BULK: {mapping.GridColumn} celler";
-                    if (mapping.DefaultToBottom)
-                        position += " (B)";
-                    else
-                        position += " (T)";
+                    if (mapping.DefaultToBottom) position += " (B)";
+                    else position += " (T)";
                 }
                 else if (mapping.GridRow == -1)
-                {
                     position = $"Motor {mapping.GridColumn - 1000}";
-                }
                 else if (mapping.GridRow == -2)
-                {
                     position = $"Door {mapping.GridColumn - 1000}";
-                }
                 else
                 {
                     position = $"({mapping.GridRow},{mapping.GridColumn})";
-                    if (mapping.DefaultToBottom)
-                        position += " (B)";
-                    else
-                        position += " (T)";
+                    if (mapping.DefaultToBottom) position += " (B)";
+                    else position += " (T)";
                 }
 
                 MappingDisplayItems.Add(new MappingDisplayItem
@@ -75,7 +77,6 @@ namespace WpfEGridApp
                     GridPosition = position
                 });
             }
-
             UpdateStatus($"Lastet {mappings.Count} eksisterende mappings");
         }
 
@@ -91,31 +92,16 @@ namespace WpfEGridApp
             {
                 var mappings = _mappingManager.GetAllMappings().ToList();
                 foreach (var mapping in mappings)
-                {
                     _mappingManager.RemoveMapping(mapping.ExcelReference);
-                }
 
                 var bulkMappings = _mappingManager.GetAllBulkRanges().ToList();
                 foreach (var bulk in bulkMappings)
-                {
                     _mappingManager.RemoveBulkRangeMapping(bulk.Prefix, bulk.StartIndex, bulk.EndIndex);
-                }
 
                 LoadExistingMappings();
                 UpdateStatus("Alle mappings slettet");
             }
         }
-
-        private Queue<string> _specificMappingQueue;
-        private bool _isInSpecificMappingMode = false;
-
-        private Queue<string> _rangeMappingQueue;
-        private bool _isInRangeMappingMode = false;
-
-        private bool _isBulkMappingMode = false;
-        private string _bulkPrefix;
-        private int _bulkStart;
-        private int _bulkEnd;
 
         private void StartSpecificMapping_Click(object sender, RoutedEventArgs e)
         {
@@ -139,13 +125,11 @@ namespace WpfEGridApp
 
                 _specificMappingQueue = new Queue<string>(unmappedCells);
                 _isInSpecificMappingMode = true;
+                _waitingForUserMapping = false;
 
                 _mainWindow.StartSequentialMappingMode();
-
                 ProcessNextSpecificMapping();
-
                 this.WindowState = WindowState.Minimized;
-
                 UpdateStatus($"Starter spesifikk mapping av {unmappedCells.Count} celler.");
             }
             catch (Exception ex)
@@ -162,7 +146,6 @@ namespace WpfEGridApp
             if (usedRange == null) return new List<string>();
 
             var lastRow = usedRange.Rows.Count;
-
             for (int row = 2; row <= lastRow; row++)
             {
                 try
@@ -179,53 +162,20 @@ namespace WpfEGridApp
             var result = new List<string>();
             result.AddRange(columnBCells.OrderBy(x => x));
             result.AddRange(columnCCells.Except(columnBCells).OrderBy(x => x));
-
             return result;
-        }
-
-        private List<string> GetUniqueExcelCells()
-        {
-            var uniqueCells = new HashSet<string>();
-            var usedRange = _mainWindow.worksheet.UsedRange;
-            if (usedRange == null) return new List<string>();
-
-            var lastRow = usedRange.Rows.Count;
-
-            for (int row = 2; row <= lastRow; row++)
-            {
-                try
-                {
-                    var cellB = (_mainWindow.worksheet.Cells[row, 2] as Excel.Range)?.Value?.ToString() ?? "";
-                    var cellC = (_mainWindow.worksheet.Cells[row, 3] as Excel.Range)?.Value?.ToString() ?? "";
-
-                    if (!string.IsNullOrWhiteSpace(cellB)) uniqueCells.Add(cellB.Trim());
-                    if (!string.IsNullOrWhiteSpace(cellC)) uniqueCells.Add(cellC.Trim());
-                }
-                catch { }
-            }
-
-            return uniqueCells.ToList();
         }
 
         private List<string> FilterUnmappedCells(List<string> cells)
         {
             var unmappedCells = new List<string>();
-
             foreach (var cell in cells)
             {
                 if (!_mappingManager.IsReferenceMapped(cell))
-                {
                     unmappedCells.Add(cell);
-                }
             }
-
             return unmappedCells;
         }
 
-        /// <summary>
-        /// Prosesserer neste referanse i sekvensiell mapping. Hopper over referanser
-        /// som allerede er mappet (f.eks. via automatisk stjerne-logikk).
-        /// </summary>
         private void ProcessNextSpecificMapping()
         {
             if (!_isInSpecificMappingMode || _specificMappingQueue == null)
@@ -234,32 +184,30 @@ namespace WpfEGridApp
                 return;
             }
 
-            // Hopp over alle referanser som allerede er mappet
+            if (_waitingForUserMapping)
+                return;
+
             while (_specificMappingQueue.Count > 0)
             {
                 var currentCell = _specificMappingQueue.Peek();
 
-                // Sjekk om denne referansen allerede er mappet
                 if (_mappingManager.IsReferenceMapped(currentCell))
                 {
-                    // Allerede mappet, hopp over
                     _specificMappingQueue.Dequeue();
                     continue;
                 }
 
-                // Ikke mappet, prosesser denne
                 _specificMappingQueue.Dequeue();
                 _mainWindow.StartInteractiveMapping(currentCell, "", OnSpecificMappingCompleted);
                 UpdateStatus($"Mapper '{currentCell}' - {_specificMappingQueue.Count} gjenstår");
                 return;
             }
-
-            // Køen er tom eller alle er mappet
             EndSpecificMappingMode();
         }
 
         private void OnSpecificMappingCompleted(string reference, string ignore)
         {
+            _waitingForUserMapping = false;
             LoadExistingMappings();
 
             System.Threading.Tasks.Task.Delay(100).ContinueWith(_ =>
@@ -271,9 +219,6 @@ namespace WpfEGridApp
         public void OnSequentialMappingFinished()
         {
             EndSpecificMappingMode();
-            this.WindowState = WindowState.Normal;
-            this.Activate();
-            LoadExistingMappings();
         }
 
         public void PutReferenceBackInQueue(string reference)
@@ -284,14 +229,29 @@ namespace WpfEGridApp
                 newQueue.Enqueue(reference);
 
                 while (_specificMappingQueue.Count > 0)
-                {
                     newQueue.Enqueue(_specificMappingQueue.Dequeue());
-                }
 
                 _specificMappingQueue = newQueue;
 
-                ProcessNextSpecificMapping();
+                // VIKTIG: Ikke sett waiting flag - MainWindow håndterer restart av mapping
+                _waitingForUserMapping = false;
+
+                UpdateStatus($"Angret mapping for '{reference}' - klar for ny mapping. ({_specificMappingQueue.Count - 1} gjenstår etter denne)");
             }
+        }
+
+        private void EndSpecificMappingMode()
+        {
+            _isInSpecificMappingMode = false;
+            _specificMappingQueue = null;
+            _waitingForUserMapping = false;
+            _mainWindow.EndMappingMode();
+            _mainWindow.EndSequentialMappingMode();
+
+            this.WindowState = WindowState.Normal;
+            this.Activate();
+            LoadExistingMappings();
+            UpdateStatus("Spesifikk mapping fullført");
         }
 
         private void StartRangeMapping_Click(object sender, RoutedEventArgs e)
@@ -322,16 +282,8 @@ namespace WpfEGridApp
                 return;
             }
 
-            int endNum;
-            if (string.IsNullOrEmpty(endStr))
-            {
-                endNum = startNum;
-            }
-            else if (!int.TryParse(endStr, out endNum))
-            {
-                MessageBox.Show("Sluttnummeret kunne ikke tolkes", "Feil", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
+            int endNum = string.IsNullOrEmpty(endStr) ? startNum :
+                        (int.TryParse(endStr, out endNum) ? endNum : startNum);
 
             if (endNum < startNum)
             {
@@ -350,45 +302,10 @@ namespace WpfEGridApp
             MessageBox.Show(
                 "Bulk mapping startet. Gå tilbake til hovedvinduet og klikk på en eller flere T/B-celler for å velge posisjoner.\n\n" +
                 "Når du er ferdig, klikk på 'Ferdig bulk mapping' i hovedvinduet for å fullføre.",
-                "Bulk mapping",
-                MessageBoxButton.OK,
-                MessageBoxImage.Information);
+                "Bulk mapping", MessageBoxButton.OK, MessageBoxImage.Information);
 
             _mainWindow.StartBulkMappingSelection(prefix, startNum, endNum, OnBulkMappingCompleted);
-
             this.WindowState = WindowState.Minimized;
-        }
-
-        private void ProcessNextRangeMapping()
-        {
-            if (!_isInRangeMappingMode || _rangeMappingQueue == null || _rangeMappingQueue.Count == 0)
-            {
-                EndRangeMapping();
-                return;
-            }
-            var currentRef = _rangeMappingQueue.Dequeue();
-            _mainWindow.StartInteractiveMapping(currentRef, "", OnRangeMappingCompleted);
-            UpdateStatus($"Mapper '{currentRef}' - {_rangeMappingQueue.Count} gjenstår");
-        }
-
-        private void OnRangeMappingCompleted(string reference, string ignore)
-        {
-            LoadExistingMappings();
-            System.Threading.Tasks.Task.Delay(100).ContinueWith(_ =>
-            {
-                this.Dispatcher.Invoke(() => ProcessNextRangeMapping());
-            });
-        }
-
-        private void EndRangeMapping()
-        {
-            _isInRangeMappingMode = false;
-            _rangeMappingQueue = null;
-            _mainWindow.EndMappingMode();
-            this.WindowState = WindowState.Normal;
-            this.Activate();
-            NewExcelReference.Clear();
-            UpdateStatus("Rekke-mapping fullført");
         }
 
         private void FinishBulkMappingButton_Click(object sender, RoutedEventArgs e)
@@ -423,7 +340,6 @@ namespace WpfEGridApp
                     }
 
                     bool selectedIsTop = _mainWindow.BulkMappingSelectedIsTop;
-
                     _mappingManager.AddBulkRangeMapping(prefix, startNumber, endNumber, cells, selectedIsTop);
 
                     FinishBulkMappingButton.Visibility = Visibility.Collapsed;
@@ -444,15 +360,6 @@ namespace WpfEGridApp
             });
         }
 
-        private void EndSpecificMappingMode()
-        {
-            _isInSpecificMappingMode = false;
-            _specificMappingQueue = null;
-            _mainWindow.EndMappingMode();
-            _mainWindow.EndSequentialMappingMode();
-            UpdateStatus("Spesifikk mapping fullført");
-        }
-
         protected override void OnKeyDown(System.Windows.Input.KeyEventArgs e)
         {
             if (e.Key == System.Windows.Input.Key.Escape)
@@ -471,6 +378,38 @@ namespace WpfEGridApp
             base.OnKeyDown(e);
         }
 
+        private void ProcessNextRangeMapping()
+        {
+            if (!_isInRangeMappingMode || _rangeMappingQueue == null || _rangeMappingQueue.Count == 0)
+            {
+                EndRangeMapping();
+                return;
+            }
+            var currentRef = _rangeMappingQueue.Dequeue();
+            _mainWindow.StartInteractiveMapping(currentRef, "", OnRangeMappingCompleted);
+            UpdateStatus($"Mapper '{currentRef}' - {_rangeMappingQueue.Count} gjenstår");
+        }
+
+        private void OnRangeMappingCompleted(string reference, string ignore)
+        {
+            LoadExistingMappings();
+            System.Threading.Tasks.Task.Delay(100).ContinueWith(_ =>
+            {
+                this.Dispatcher.Invoke(() => ProcessNextRangeMapping());
+            });
+        }
+
+        private void EndRangeMapping()
+        {
+            _isInRangeMappingMode = false;
+            _rangeMappingQueue = null;
+            _mainWindow.EndMappingMode();
+            this.WindowState = WindowState.Normal;
+            this.Activate();
+            NewExcelReference.Clear();
+            UpdateStatus("Rekke-mapping fullført");
+        }
+
         private void StartInteractiveMapping_Click(object sender, RoutedEventArgs e)
         {
             if (string.IsNullOrWhiteSpace(NewExcelReference.Text))
@@ -480,7 +419,6 @@ namespace WpfEGridApp
             }
 
             var reference = NewExcelReference.Text.Trim();
-
             _mainWindow.StartInteractiveMapping(reference, "", OnMappingCompleted);
             UpdateStatus($"Interaktiv mapping startet for {reference}. Klikk på mellomrad i hovedvinduet.");
             this.WindowState = WindowState.Minimized;
@@ -523,9 +461,7 @@ namespace WpfEGridApp
                 foreach (var reference in foundReferences.OrderBy(r => r))
                 {
                     if (!_mappingManager.HasMapping(reference))
-                    {
                         UnmappedReferences.Add(new UnmappedReferenceItem { Reference = reference, IsSelected = false });
-                    }
                 }
 
                 UpdateStatus($"Fant {UnmappedReferences.Count} umappede base-referanser av totalt {foundReferences.Count}");
@@ -533,8 +469,7 @@ namespace WpfEGridApp
             catch (Exception ex)
             {
                 UpdateStatus($"Feil ved søking: {ex.Message}");
-                MessageBox.Show($"Feil ved søking etter referanser: {ex.Message}", "Feil",
-                               MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show($"Feil ved søking etter referanser: {ex.Message}", "Feil", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -543,12 +478,9 @@ namespace WpfEGridApp
             if (string.IsNullOrWhiteSpace(cellValue)) return;
 
             var allMatches = new List<string>();
-
             var prefixMatches = Regex.Matches(cellValue, @"([A-Z]\d+-[A-Z]\d+)");
             foreach (Match match in prefixMatches)
-            {
                 allMatches.Add(match.Groups[1].Value);
-            }
 
             if (allMatches.Count == 0)
             {
@@ -565,18 +497,14 @@ namespace WpfEGridApp
                 {
                     var startPos = match.Index;
                     var endPos = startPos + match.Length;
-
                     if (endPos < cellValue.Length && cellValue[endPos] == ':')
                         continue;
-
                     allMatches.Add(match.Value);
                 }
             }
 
             foreach (var reference in allMatches.Distinct())
-            {
                 references.Add(reference);
-            }
         }
 
         private void StartSelectedMapping_Click(object sender, RoutedEventArgs e)
@@ -590,13 +518,11 @@ namespace WpfEGridApp
 
             _specificMappingQueue = new Queue<string>(selectedRefs);
             _isInSpecificMappingMode = true;
+            _waitingForUserMapping = false;
 
             _mainWindow.StartSequentialMappingMode();
-
             ProcessNextSpecificMapping();
-
             this.WindowState = WindowState.Minimized;
-
             UpdateStatus($"Starter mapping av {selectedRefs.Count} valgte referanser");
         }
 
@@ -604,11 +530,8 @@ namespace WpfEGridApp
         {
             if (sender is Button button && button.Tag is string excelReference)
             {
-                var result = MessageBox.Show(
-                    $"Slett mapping for {excelReference}?",
-                    "Bekreft sletting",
-                    MessageBoxButton.YesNo,
-                    MessageBoxImage.Question);
+                var result = MessageBox.Show($"Slett mapping for {excelReference}?", "Bekreft sletting",
+                    MessageBoxButton.YesNo, MessageBoxImage.Question);
 
                 if (result == MessageBoxResult.Yes)
                 {
@@ -628,8 +551,7 @@ namespace WpfEGridApp
 
                 UpdateStatus($"Prosesserte {processedCount} ledninger");
                 MessageBox.Show($"Ferdig! Prosesserte {processedCount} ledninger automatisk.",
-                               "Automatisk prosessering fullført",
-                               MessageBoxButton.OK, MessageBoxImage.Information);
+                               "Automatisk prosessering fullført", MessageBoxButton.OK, MessageBoxImage.Information);
 
                 _mainWindow.UpdateExcelDisplayText();
             }
@@ -647,15 +569,12 @@ namespace WpfEGridApp
             {
                 var processor = new ExcelConnectionProcessor(_mainWindow, _mappingManager);
                 var result = processor.TestProcessing();
-
-                var message = $"Test resultat:\n\n{result}";
-                MessageBox.Show(message, "Test prosessering", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show($"Test resultat:\n\n{result}", "Test prosessering", MessageBoxButton.OK, MessageBoxImage.Information);
             }
             catch (Exception ex)
             {
                 UpdateStatus($"Feil under test: {ex.Message}");
-                MessageBox.Show($"Feil under test prosessering: {ex.Message}", "Feil",
-                               MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show($"Feil under test prosessering: {ex.Message}", "Feil", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 

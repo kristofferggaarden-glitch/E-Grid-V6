@@ -389,6 +389,8 @@ namespace WpfEGridApp
         /// <summary>
         /// Handles undo button click - removes the last mapping and puts it back in queue
         /// </summary>
+        // Erstatt kun denne metoden i din eksisterende MainWindow.xaml.cs
+
         private void UndoMapping_Click(object sender, RoutedEventArgs e)
         {
             if (!_isInSequentialMappingMode || _sequentialMappingUndoStack.Count == 0)
@@ -396,34 +398,37 @@ namespace WpfEGridApp
 
             var lastMapping = _sequentialMappingUndoStack.Pop();
 
-            // Remove the mapping from storage
+            // Fjern mappingen
             if (_componentMappingManager != null)
             {
                 _componentMappingManager.RemoveMapping(lastMapping);
 
-                // Update the component mapping window if it exists and is loaded
                 if (_componentMappingWindow != null)
                 {
                     try
                     {
                         _componentMappingWindow.LoadExistingMappings();
                     }
-                    catch
-                    {
-                        // If the window is closed or disposed, ignore the error
-                    }
+                    catch { }
                 }
             }
 
-            // Put the reference back at the front of the queue to be mapped again
+            // Sett referansen tilbake i køen
             if (_componentMappingWindow != null)
             {
                 _componentMappingWindow.PutReferenceBackInQueue(lastMapping);
             }
 
             UpdateUndoButtonState();
-            ResultText.Text = $"Angret mapping for: {lastMapping} - klar for ny mapping";
+
+            // Restart mapping for den angrede referansen
+            // VIKTIG: Ikke avslutt mapping mode, bare restart med ny referanse
+            _currentMappingReference = lastMapping;
+            MappingIndicatorText.Text = $"Mapper: {lastMapping}";
+            ResultText.Text = $"Angret - mapper nå '{lastMapping}' på nytt. Klikk på grid-posisjon.";
         }
+
+       
 
         /// <summary>
         /// Handles finish button click - ends sequential mapping and opens component mapping window
@@ -433,14 +438,24 @@ namespace WpfEGridApp
             EndSequentialMappingMode();
             EndMappingMode();
 
-            // Open component mapping window
-            if (_componentMappingWindow != null)
+            // Åpne component mapping window
+            if (_componentMappingWindow != null && !_componentMappingWindow.IsLoaded)
             {
+                // Vinduet er lukket, opprett nytt
+                _componentMappingWindow = new ComponentMappingWindow(this, _componentMappingManager);
+                _componentMappingWindow.Show();
+            }
+            else if (_componentMappingWindow != null)
+            {
+                // Vinduet finnes allerede, vis og aktiver det
+                _componentMappingWindow.WindowState = WindowState.Normal;
+                _componentMappingWindow.Activate();
                 _componentMappingWindow.OnSequentialMappingFinished();
             }
             else
             {
-                OpenComponentMapping_Click(sender, e);
+                // Ingen window finnes, opprett nytt
+                OpenComponentMapping_Click(null, null);
             }
         }
 
