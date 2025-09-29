@@ -140,12 +140,13 @@ namespace WpfEGridApp
 
         private List<string> GetUniqueExcelCellsOrdered()
         {
-            var columnBCells = new HashSet<string>();
-            var columnCCells = new HashSet<string>();
+            var allCells = new HashSet<string>();
             var usedRange = _mainWindow.worksheet.UsedRange;
             if (usedRange == null) return new List<string>();
 
             var lastRow = usedRange.Rows.Count;
+
+            // Samle alle unike referanser fra både kolonne B og C
             for (int row = 2; row <= lastRow; row++)
             {
                 try
@@ -153,16 +154,14 @@ namespace WpfEGridApp
                     var cellB = (_mainWindow.worksheet.Cells[row, 2] as Excel.Range)?.Value?.ToString() ?? "";
                     var cellC = (_mainWindow.worksheet.Cells[row, 3] as Excel.Range)?.Value?.ToString() ?? "";
 
-                    if (!string.IsNullOrWhiteSpace(cellB)) columnBCells.Add(cellB.Trim());
-                    if (!string.IsNullOrWhiteSpace(cellC)) columnCCells.Add(cellC.Trim());
+                    if (!string.IsNullOrWhiteSpace(cellB)) allCells.Add(cellB.Trim());
+                    if (!string.IsNullOrWhiteSpace(cellC)) allCells.Add(cellC.Trim());
                 }
                 catch { }
             }
 
-            var result = new List<string>();
-            result.AddRange(columnBCells.OrderBy(x => x));
-            result.AddRange(columnCCells.Except(columnBCells).OrderBy(x => x));
-            return result;
+            // Returner sortert alfabetisk
+            return allCells.OrderBy(x => x).ToList();
         }
 
         private List<string> FilterUnmappedCells(List<string> cells)
