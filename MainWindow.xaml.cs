@@ -28,39 +28,20 @@ namespace WpfEGridApp
         private bool _isInMappingMode = false;
         private Action<string, string> _mappingCompletedCallback;
 
-        // Sequential mapping mode state
         private bool _isInSequentialMappingMode = false;
         private Stack<string> _sequentialMappingUndoStack = new Stack<string>();
         private ComponentMappingWindow _componentMappingWindow;
 
-        // Indicates whether the application is in cell removal mode.  When true
-        // regular cell clicks will remove the cell from the grid instead of
-        // initiating a measurement.  The RemoveCellsButton toggles this flag.
         private bool _isRemovingCells = false;
 
-        // ==== Bulk mapping mode state ====
-        // When true the user is selecting multiple grid cells to map a range of
-        // terminal blocks (rekkeklemmer).  Clicks on grid cells will toggle
-        // membership in the selection and no measurement or normal mapping
-        // processing will occur.  When finished the selection is passed back
-        // to the ComponentMappingWindow via a callback.
         private bool _isBulkMappingSelectionMode = false;
         private string _bulkMappingPrefix;
         private int _bulkMappingStart;
         private int _bulkMappingEnd;
         private List<(int Row, int Col)> _bulkSelectedCells;
         private Action<string, int, int, List<(int Row, int Col)>> _bulkMappingCompletedCallback;
-
-        // Flag to remember whether the current bulk mapping selection is on top (T) or bottom (B).
-        // null means not yet decided.  True means T (overside), false means B (underside).
         private bool? _bulkMappingSelectedIsTop;
 
-        /// <summary>
-        /// Angir hvilken side (oversiden/T eller undersiden/B) som er valgt i gjeldende
-        /// bulk-mapping.  Denne verdien settes når brukeren klikker på den første
-        /// T- eller B-knappen i bulk mapping-modus.  Den brukes av
-        /// ComponentMappingWindow når bulk mapping fullføres.
-        /// </summary>
         public bool BulkMappingSelectedIsTop { get; private set; }
 
         public int Sections
@@ -131,7 +112,6 @@ namespace WpfEGridApp
                     Background = Brushes.Transparent
                 };
 
-                // Door button
                 var doorBtn = new Button
                 {
                     Content = $"Door {s + 1}",
@@ -158,7 +138,6 @@ namespace WpfEGridApp
                 doorLockBtn.Click += (sender, e) => LockPointA_Click(sender, doorPoints);
                 sectionPanel.Children.Add(doorLockBtn);
 
-                // Grid
                 var grid = new Grid
                 {
                     Background = Brushes.Transparent,
@@ -166,7 +145,6 @@ namespace WpfEGridApp
                 };
                 sectionPanel.Children.Add(grid);
 
-                // Motor button  
                 var motorBtn = new Button
                 {
                     Content = $"Motor {s + 1}",
@@ -193,7 +171,6 @@ namespace WpfEGridApp
                 motorLockBtn.Click += (sender, e) => LockPointA_Click(sender, motorPoints);
                 sectionPanel.Children.Add(motorLockBtn);
 
-                // Setup grid structure
                 grid.RowDefinitions.Clear();
                 grid.ColumnDefinitions.Clear();
                 for (int r = 0; r < Rows; r++)
@@ -201,30 +178,28 @@ namespace WpfEGridApp
                 for (int c = 0; c < Cols; c++)
                     grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-                // Add cells to grid
                 for (int row = 0; row < Rows; row++)
                 {
-                    if (row % 2 == 0) // Even rows - regular cells
+                    if (row % 2 == 0)
                     {
                         for (int col = 0; col < Cols; col++)
                             AddCell(grid, row, col, s);
                     }
-                    else // Odd rows - mapping cells
+                    else
                     {
-                        AddCell(grid, row, 0, s); // First column regular cell
+                        AddCell(grid, row, 0, s);
                         for (int col = 1; col < Cols; col++)
                             AddMappingCell(grid, row, col, s);
                     }
                 }
 
-                // Add special points
                 doorPoints.Add(new SpecialPoint
                 {
                     SectionIndex = s,
                     Type = SpecialPointType.Door,
                     Button = doorBtn,
                     GlobalRow = 0,
-                    GlobalCol = s * Cols // Fixed: Direct section * cols
+                    GlobalCol = s * Cols
                 });
 
                 motorPoints.Add(new SpecialPoint
@@ -233,13 +208,12 @@ namespace WpfEGridApp
                     Type = SpecialPointType.Motor,
                     Button = motorBtn,
                     GlobalRow = Rows - 1,
-                    GlobalCol = s * Cols + (Cols - 1) // Fixed: Section * cols + last col in section
+                    GlobalCol = s * Cols + (Cols - 1)
                 });
 
                 MainPanel.Children.Add(sectionPanel);
             }
 
-            // Restore locked point if exists
             if (_lockedPointA != null)
             {
                 var points = _lockedPointA.Type == SpecialPointType.Door ? doorPoints : motorPoints;
@@ -287,7 +261,6 @@ namespace WpfEGridApp
             Grid.SetColumn(btn, localCol);
             grid.Children.Add(btn);
 
-            // Fixed global coordinates
             int globalRow = localRow;
             int globalCol = sectionIndex * Cols + localCol;
             allCells[(globalRow, globalCol)] = new Cell(globalRow, globalCol, btn);
@@ -333,18 +306,13 @@ namespace WpfEGridApp
             Grid.SetColumn(stackPanel, localCol);
             grid.Children.Add(stackPanel);
 
-            // Fixed mapping cell coordinates
             int globalRow = localRow;
             int globalCol = sectionIndex * Cols + localCol;
 
-            // Store mapping cells with proper keys
-            mappingCells[(globalRow, globalCol)] = new Cell(globalRow, globalCol, btnTop);  // Top side
-            mappingCells[(-globalRow - 1, globalCol)] = new Cell(-globalRow - 1, globalCol, btnBottom); // Bottom side (negative)
+            mappingCells[(globalRow, globalCol)] = new Cell(globalRow, globalCol, btnTop);
+            mappingCells[(-globalRow - 1, globalCol)] = new Cell(-globalRow - 1, globalCol, btnBottom);
         }
 
-        /// <summary>
-        /// Starts sequential mapping mode - shows undo and finish buttons
-        /// </summary>
         public void StartSequentialMappingMode()
         {
             _isInSequentialMappingMode = true;
@@ -353,9 +321,6 @@ namespace WpfEGridApp
             UpdateUndoButtonState();
         }
 
-        /// <summary>
-        /// Ends sequential mapping mode - hides undo and finish buttons
-        /// </summary>
         public void EndSequentialMappingMode()
         {
             _isInSequentialMappingMode = false;
@@ -363,9 +328,6 @@ namespace WpfEGridApp
             SequentialMappingControls.Visibility = Visibility.Collapsed;
         }
 
-        /// <summary>
-        /// Updates the undo button enabled state based on stack contents
-        /// </summary>
         private void UpdateUndoButtonState()
         {
             if (UndoMappingButton != null)
@@ -374,9 +336,6 @@ namespace WpfEGridApp
             }
         }
 
-        /// <summary>
-        /// Records a mapping in the undo stack
-        /// </summary>
         private void RecordMappingForUndo(string excelReference)
         {
             if (_isInSequentialMappingMode)
@@ -386,11 +345,6 @@ namespace WpfEGridApp
             }
         }
 
-        /// <summary>
-        /// Handles undo button click - removes the last mapping and puts it back in queue
-        /// </summary>
-        // Erstatt kun denne metoden i din eksisterende MainWindow.xaml.cs
-
         private void UndoMapping_Click(object sender, RoutedEventArgs e)
         {
             if (!_isInSequentialMappingMode || _sequentialMappingUndoStack.Count == 0)
@@ -398,7 +352,6 @@ namespace WpfEGridApp
 
             var lastMapping = _sequentialMappingUndoStack.Pop();
 
-            // Fjern mappingen
             if (_componentMappingManager != null)
             {
                 _componentMappingManager.RemoveMapping(lastMapping);
@@ -413,7 +366,6 @@ namespace WpfEGridApp
                 }
             }
 
-            // Sett referansen tilbake i køen
             if (_componentMappingWindow != null)
             {
                 _componentMappingWindow.PutReferenceBackInQueue(lastMapping);
@@ -421,71 +373,55 @@ namespace WpfEGridApp
 
             UpdateUndoButtonState();
 
-            // Restart mapping for den angrede referansen
-            // VIKTIG: Ikke avslutt mapping mode, bare restart med ny referanse
             _currentMappingReference = lastMapping;
             MappingIndicatorText.Text = $"Mapper: {lastMapping}";
             ResultText.Text = $"Angret - mapper nå '{lastMapping}' på nytt. Klikk på grid-posisjon.";
         }
 
-       
-
-        /// <summary>
-        /// Handles finish button click - ends sequential mapping and opens component mapping window
-        /// </summary>
         private void FinishMapping_Click(object sender, RoutedEventArgs e)
         {
             EndSequentialMappingMode();
             EndMappingMode();
 
-            // Åpne component mapping window
             if (_componentMappingWindow != null && !_componentMappingWindow.IsLoaded)
             {
-                // Vinduet er lukket, opprett nytt
                 _componentMappingWindow = new ComponentMappingWindow(this, _componentMappingManager);
                 _componentMappingWindow.Show();
             }
             else if (_componentMappingWindow != null)
             {
-                // Vinduet finnes allerede, vis og aktiver det
                 _componentMappingWindow.WindowState = WindowState.Normal;
                 _componentMappingWindow.Activate();
                 _componentMappingWindow.OnSequentialMappingFinished();
             }
             else
             {
-                // Ingen window finnes, opprett nytt
                 OpenComponentMapping_Click(null, null);
             }
         }
 
         private void MappingCell_Click(object sender, RoutedEventArgs e)
         {
-            // During bulk mapping selection we want mapping cell clicks to behave like
-            // normal cell clicks so that multiple mapping cells (T/B) can be selected.
-            // Redirect the event to the CellClick handler which contains bulk
-            // selection logic.  Note that CellClick checks _isBulkMappingSelectionMode
-            // and will perform appropriate selection highlighting and side locking.
+            var btn = sender as Button;
+            if (btn == null) return;
+
             if (_isBulkMappingSelectionMode)
             {
-                CellClick(sender, e);
+                HandleBulkMappingCellClick(btn);
                 return;
             }
-
-            var btn = sender as Button;
 
             if (_isInMappingMode)
             {
                 Cell cell = null;
                 bool isBottomSide = false;
 
-                // Find which mapping cell was clicked
                 foreach (var kvp in mappingCells)
                 {
                     if (kvp.Value.ButtonRef == btn)
                     {
                         cell = kvp.Value;
-                        isBottomSide = kvp.Key.Item1 < 0; // Negative row = bottom side
+                        isBottomSide = kvp.Key.Item1 < 0;
                         break;
                     }
                 }
@@ -496,7 +432,6 @@ namespace WpfEGridApp
 
                     _componentMappingManager?.AddMapping(_currentMappingReference, actualRow, cell.Col, isBottomSide);
 
-                    // Record for undo
                     RecordMappingForUndo(_currentMappingReference);
 
                     _mappingCompletedCallback?.Invoke(_currentMappingReference, "");
@@ -505,8 +440,260 @@ namespace WpfEGridApp
             }
         }
 
-        // Fortsetter i del 2...
-        // Del 2 av MainWindow.xaml.cs - Versjon 2.0
+        private void HandleBulkMappingCellClick(Button btn)
+        {
+            if (btn == null || !_isBulkMappingSelectionMode) return;
+
+            var mappingEntry = mappingCells.FirstOrDefault(kvp => kvp.Value.ButtonRef == btn);
+            if (mappingEntry.Equals(default(KeyValuePair<(int, int), Cell>)))
+            {
+                return;
+            }
+
+            bool clickedIsTop = mappingEntry.Key.Item1 >= 0;
+
+            if (_bulkMappingSelectedIsTop == null)
+            {
+                _bulkMappingSelectedIsTop = clickedIsTop;
+                BulkMappingSelectedIsTop = clickedIsTop;
+            }
+            else if (_bulkMappingSelectedIsTop != clickedIsTop)
+            {
+                MessageBox.Show("Du kan kun velge enten T eller B celler i samme bulk mapping.",
+                               "Ugyldig valg", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            int actualRow;
+            if (clickedIsTop)
+            {
+                actualRow = mappingEntry.Key.Item1;
+            }
+            else
+            {
+                actualRow = -(mappingEntry.Key.Item1 + 1);
+            }
+
+            int column = mappingEntry.Key.Item2;
+
+            System.Diagnostics.Debug.WriteLine($"Bulk click: Row={actualRow}, Col={column}, IsTop={clickedIsTop}");
+
+            bool alreadySelected = _bulkSelectedCells != null && _bulkSelectedCells.Any(c => c.Row == actualRow && c.Col == column);
+
+            if (alreadySelected)
+            {
+                _bulkSelectedCells.RemoveAll(c => c.Row == actualRow && c.Col == column);
+                btn.Background = new SolidColorBrush(Color.FromRgb(80, 120, 140));
+            }
+            else
+            {
+                if (_bulkSelectedCells == null)
+                    _bulkSelectedCells = new List<(int Row, int Col)>();
+
+                _bulkSelectedCells.Add((actualRow, column));
+                btn.Background = new SolidColorBrush(Color.FromRgb(0, 178, 148));
+            }
+
+            int count = _bulkSelectedCells?.Count ?? 0;
+            ResultText.Text = $"Bulk mapping: {count} celler valgt ({(clickedIsTop ? "T" : "B")} side). Klikk 'Ferdig bulk mapping' når ferdig.";
+
+            System.Diagnostics.Debug.WriteLine($"Total cells selected: {count}");
+        }
+
+        public void StartBulkMappingSelection(string prefix, int startNumber, int endNumber,
+                                              Action<string, int, int, List<(int Row, int Col)>> onCompleted)
+        {
+            EndMappingMode();
+            _isRemovingCells = false;
+
+            _isBulkMappingSelectionMode = true;
+            _bulkMappingPrefix = prefix;
+            _bulkMappingStart = startNumber;
+            _bulkMappingEnd = endNumber;
+            _bulkSelectedCells = new List<(int Row, int Col)>();
+            _bulkMappingCompletedCallback = onCompleted;
+
+            _bulkMappingSelectedIsTop = null;
+            BulkMappingSelectedIsTop = false;
+
+            MappingIndicatorText.Text = $"Bulk mapping: {prefix}:{startNumber}-{endNumber}. Velg T eller B celler.";
+            MappingIndicator.Visibility = Visibility.Visible;
+            CancelMappingButton.Visibility = Visibility.Visible;
+
+            if (CompleteBulkMappingButton != null)
+            {
+                CompleteBulkMappingButton.Visibility = Visibility.Visible;
+            }
+
+            foreach (var kvp in mappingCells)
+            {
+                var mappingCell = kvp.Value;
+                if (mappingCell.ButtonRef != null)
+                {
+                    mappingCell.ButtonRef.IsEnabled = true;
+                    mappingCell.ButtonRef.Background = new SolidColorBrush(Color.FromRgb(80, 120, 140));
+                }
+            }
+
+            foreach (var dp in doorPoints)
+                dp.Button.IsEnabled = false;
+            foreach (var mp in motorPoints)
+                mp.Button.IsEnabled = false;
+
+            ResultText.Text = $"Bulk mapping: Velg T eller B celler for {prefix}:{startNumber}-{endNumber}. Klikk på celler for å velge.";
+
+            this.Activate();
+            this.Focus();
+        }
+
+        public void FinishBulkMappingSelection()
+        {
+            if (!_isBulkMappingSelectionMode)
+            {
+                MessageBox.Show("Ikke i bulk mapping modus.", "Feil", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            int cellCount = _bulkSelectedCells?.Count ?? 0;
+            System.Diagnostics.Debug.WriteLine($"FinishBulkMappingSelection called. Cells: {cellCount}");
+
+            if (_bulkSelectedCells == null || _bulkSelectedCells.Count == 0)
+            {
+                MessageBox.Show($"Ingen celler ble valgt.\n\nKlikk på T eller B celler før du fullfører bulk mapping.\n\nDebug: Liste er {(_bulkSelectedCells == null ? "null" : "tom")}",
+                               "Ingen celler valgt", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            var prefix = _bulkMappingPrefix;
+            var startNumber = _bulkMappingStart;
+            var endNumber = _bulkMappingEnd;
+            var selectedCells = new List<(int Row, int Col)>(_bulkSelectedCells);
+            var selectedIsTop = BulkMappingSelectedIsTop;
+            var callback = _bulkMappingCompletedCallback;
+
+            System.Diagnostics.Debug.WriteLine($"Calling callback with {selectedCells.Count} cells");
+            foreach (var cell in selectedCells)
+            {
+                System.Diagnostics.Debug.WriteLine($"  Cell: Row={cell.Row}, Col={cell.Col}");
+            }
+
+            EndBulkMappingMode();
+
+            if (callback != null)
+            {
+                try
+                {
+                    callback.Invoke(prefix, startNumber, endNumber, selectedCells);
+                    MessageBox.Show($"Bulk mapping fullført!\n\nRange: {prefix}:{startNumber}-{endNumber}\nCeller: {selectedCells.Count}\nSide: {(selectedIsTop ? "T" : "B")}",
+                                   "Suksess", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Feil ved lagring av bulk mapping:\n\n{ex.Message}\n\nStack:\n{ex.StackTrace}",
+                                   "Feil", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+            else
+            {
+                MessageBox.Show("Callback er null!", "Feil", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void CancelBulkMappingSelection()
+        {
+            if (!_isBulkMappingSelectionMode)
+                return;
+
+            EndBulkMappingMode();
+            MessageBox.Show("Bulk mapping avbrutt.", "Avbrutt", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+
+        private void EndBulkMappingMode()
+        {
+            _isBulkMappingSelectionMode = false;
+            _bulkMappingPrefix = null;
+            _bulkMappingStart = 0;
+            _bulkMappingEnd = 0;
+            _bulkSelectedCells = null;
+            _bulkMappingCompletedCallback = null;
+            _bulkMappingSelectedIsTop = null;
+            BulkMappingSelectedIsTop = false;
+
+            foreach (var cell in allCells.Values)
+            {
+                if (cell.ButtonRef != null && cell.ButtonRef.IsEnabled)
+                {
+                    cell.ButtonRef.Background = new SolidColorBrush(Color.FromRgb(74, 90, 91));
+                }
+            }
+            foreach (var kvp in mappingCells)
+            {
+                var mappingCell = kvp.Value;
+                if (mappingCell.ButtonRef != null)
+                {
+                    var content = mappingCell.ButtonRef.Content?.ToString();
+                    if (content == "T")
+                        mappingCell.ButtonRef.Background = new SolidColorBrush(Color.FromRgb(80, 90, 100));
+                    else if (content == "B")
+                        mappingCell.ButtonRef.Background = new SolidColorBrush(Color.FromRgb(60, 70, 80));
+                }
+            }
+
+            foreach (var dp in doorPoints)
+                dp.Button.IsEnabled = true;
+            foreach (var mp in motorPoints)
+                mp.Button.IsEnabled = true;
+
+            MappingIndicator.Visibility = Visibility.Collapsed;
+            CancelMappingButton.Visibility = Visibility.Collapsed;
+            if (CompleteBulkMappingButton != null)
+            {
+                CompleteBulkMappingButton.Visibility = Visibility.Collapsed;
+            }
+            ResultText.Text = string.Empty;
+        }
+
+        private void CancelMapping_Click(object sender, RoutedEventArgs e)
+        {
+            if (_isInMappingMode)
+            {
+                EndMappingMode();
+            }
+            else if (_isBulkMappingSelectionMode)
+            {
+                CancelBulkMappingSelection();
+            }
+        }
+
+        private void CompleteBulkMappingButton_Click(object sender, RoutedEventArgs e)
+        {
+            System.Diagnostics.Debug.WriteLine("CompleteBulkMappingButton_Click called");
+            FinishBulkMappingSelection();
+        }
+
+        private void RemoveCellsButton_Click(object sender, RoutedEventArgs e)
+        {
+            _isRemovingCells = !_isRemovingCells;
+            if (_isRemovingCells)
+            {
+                if (RemoveCellsButton != null)
+                {
+                    RemoveCellsButton.Content = "Ferdig fjerning";
+                }
+                startPoint = null;
+                endPoint = null;
+                ResultText.Text = "Klikk på cellene du vil fjerne.";
+            }
+            else
+            {
+                if (RemoveCellsButton != null)
+                {
+                    RemoveCellsButton.Content = "Fjern celler";
+                }
+                ResultText.Text = _lockedPointA != null ? $"Locked point A: {_lockedPointA.Type} {_lockedPointA.SectionIndex + 1}" : "";
+                ResetSelection();
+            }
+        }
 
         public void EndMappingMode()
         {
@@ -514,7 +701,6 @@ namespace WpfEGridApp
             _currentMappingReference = "";
             _mappingCompletedCallback = null;
 
-            // Hide mapping indicator and cancel button (but not sequential mapping controls)
             MappingIndicator.Visibility = Visibility.Collapsed;
             if (!_isInSequentialMappingMode)
             {
@@ -527,7 +713,6 @@ namespace WpfEGridApp
                 cell.ButtonRef.IsEnabled = true;
             }
 
-            // Reset Door and Motor buttons to original color
             foreach (var dp in doorPoints)
                 dp.Button.Background = (Brush)FindResource("OrangeButtonBrush");
             foreach (var mp in motorPoints)
@@ -563,84 +748,18 @@ namespace WpfEGridApp
         {
             var btn = sender as Button;
 
-            // If we are in bulk mapping selection mode, treat clicks as selection toggles.
             if (_isBulkMappingSelectionMode)
             {
-                if (btn != null)
-                {
-                    // Only allow mapping cells (T/B) to be selected
-                    var mappingEntry = mappingCells.FirstOrDefault(kvp => kvp.Value.ButtonRef == btn);
-                    if (!mappingEntry.Equals(default(KeyValuePair<(int, int), Cell>)))
-                    {
-                        // Determine whether user clicked on a top (T) or bottom (B) mapping cell
-                        bool clickedIsTop = mappingEntry.Key.Item1 >= 0;
-                        // Set side if not set, else check consistency
-                        if (_bulkMappingSelectedIsTop == null)
-                        {
-                            _bulkMappingSelectedIsTop = clickedIsTop;
-                            BulkMappingSelectedIsTop = clickedIsTop;
-                        }
-                        else if (_bulkMappingSelectedIsTop != clickedIsTop)
-                        {
-                            // Disallow mixing T and B cells in a single bulk mapping
-                            MessageBox.Show("Du kan kun velge enten T eller B celler under bulk mapping.", "Ugyldig valg", MessageBoxButton.OK, MessageBoxImage.Warning);
-                            return;
-                        }
-                        // Convert mapping key to actual row index
-                        int actualRow = clickedIsTop ? mappingEntry.Key.Item1 : -(mappingEntry.Key.Item1 + 1);
-                        int column = mappingEntry.Key.Item2;
-                        bool alreadySelected = _bulkSelectedCells?.Any(c => c.Row == actualRow && c.Col == column) ?? false;
-                        if (alreadySelected)
-                        {
-                            // Remove from selection
-                            _bulkSelectedCells?.RemoveAll(c => c.Row == actualRow && c.Col == column);
-                            // Reset visual on both T and B buttons for this cell
-                            // Reset colour on clicked button
-                            btn.Background = new SolidColorBrush(Color.FromRgb(80, 120, 140));
-                            // Highlight counterpart (the other side) if exists
-                            var topKey = (actualRow, column);
-                            var bottomKey = (-actualRow - 1, column);
-                            if (mappingCells.TryGetValue(topKey, out var topCell))
-                                topCell.ButtonRef.Background = new SolidColorBrush(Color.FromRgb(80, 120, 140));
-                            if (mappingCells.TryGetValue(bottomKey, out var bottomCell))
-                                bottomCell.ButtonRef.Background = new SolidColorBrush(Color.FromRgb(80, 120, 140));
-                        }
-                        else
-                        {
-                            // Add to selection
-                            _bulkSelectedCells?.Add((actualRow, column));
-                            // Highlight selected colour on the clicked button and its counterpart
-                            var selectedColour = new SolidColorBrush(Color.FromRgb(0, 178, 148));
-                            btn.Background = selectedColour;
-                            var topKey = (actualRow, column);
-                            var bottomKey = (-actualRow - 1, column);
-                            if (mappingCells.TryGetValue(topKey, out var topCell))
-                                topCell.ButtonRef.Background = selectedColour;
-                            if (mappingCells.TryGetValue(bottomKey, out var bottomCell))
-                                bottomCell.ButtonRef.Background = selectedColour;
-                        }
-                    }
-                    // Ignore clicks on regular cells during bulk mapping selection
-                }
                 return;
             }
 
-            // If we are in removal mode, remove the clicked cell from the grid and
-            // internal cell dictionary.  Skip any measurement processing.
             if (_isRemovingCells)
             {
                 if (btn != null)
                 {
-                    // Locate the corresponding cell in the allCells dictionary
                     var cellEntry = allCells.FirstOrDefault(kvp => kvp.Value.ButtonRef == btn);
                     if (!cellEntry.Equals(default(KeyValuePair<(int globalRow, int globalCol), Cell>)))
                     {
-                        // Instead of removing the Button from the Grid (which causes
-                        // the row to collapse), disable it and hide it from view.  A
-                        // hidden element still occupies layout space, preserving the
-                        // visual structure of the grid.  We then remove the cell
-                        // from the allCells dictionary so that path finding no
-                        // longer considers it.
                         btn.IsEnabled = false;
                         btn.Visibility = Visibility.Hidden;
                         allCells.Remove(cellEntry.Key);
@@ -648,6 +767,7 @@ namespace WpfEGridApp
                 }
                 return;
             }
+
             if (_lockedPointA != null)
             {
                 if (endPoint != null)
@@ -683,16 +803,13 @@ namespace WpfEGridApp
             var special = points.FirstOrDefault(p => p.SectionIndex == sectionIndex);
             if (special == null) return;
 
-            // Check if we're in mapping mode
             if (_isInMappingMode && !string.IsNullOrEmpty(_currentMappingReference))
             {
-                // Map to special point (Door or Motor)
                 int specialRow = special.Type == SpecialPointType.Door ? -2 : -1;
-                int specialCol = 1000 + sectionIndex; // Special encoding for Door/Motor
+                int specialCol = 1000 + sectionIndex;
 
                 _componentMappingManager?.AddMapping(_currentMappingReference, specialRow, specialCol, false);
 
-                // Record for undo
                 RecordMappingForUndo(_currentMappingReference);
 
                 _mappingCompletedCallback?.Invoke(_currentMappingReference, "");
@@ -700,7 +817,6 @@ namespace WpfEGridApp
                 return;
             }
 
-            // Normal click handling for manual measurement
             if (_lockedPointA != null)
             {
                 if (endPoint != null)
@@ -765,21 +881,10 @@ namespace WpfEGridApp
             Cell startCell = null;
             Cell endCell = null;
 
-            // Ekstra distanse for å justere start- og sluttdistanser. Vi
-            // ønsker at motor/dør som startpunkt skal ha samme bidrag som når de
-            // er sluttpunkter (500 for motor, 1000 for dør), og at vanlige
-            // celler bidrar med 200 uavhengig av om de er start eller slutt.
-            // PathFinder.CalculateDistance legger til 100 for startpunkt og
-            // 200 for sluttpunkt (kun dersom slutt ikke er spesial). Vi
-            // kompenserer derfor her ved å justere med ±100 for spesial og
-            // vanlige celler slik at summene blir symmetriske.
             double extraDistance = 0;
 
             if (startPoint is SpecialPoint spStart)
             {
-                // Spesialpunkt som start: motor = 400, dør = 900. Når dette legges
-                // sammen med 100 som PathFinder.CalculateDistance gir for
-                // startkoblingen, får vi 500/1000 mm som ønsket.
                 if (allCells.TryGetValue((spStart.GlobalRow, spStart.GlobalCol), out startCell))
                 {
                     extraDistance += spStart.Type == SpecialPointType.Door ? 900 : 400;
@@ -787,8 +892,6 @@ namespace WpfEGridApp
             }
             else if (startPoint is Button btnStart)
             {
-                // Vanlig celle som start: legg til 100 mm ekstra slik at
-                // totale startkostnaden blir 200 mm (100 fra CalculateDistance + 100 her)
                 startCell = allCells.Values.FirstOrDefault(c => c.ButtonRef == btnStart);
                 if (startCell != null)
                     extraDistance += 100;
@@ -796,9 +899,6 @@ namespace WpfEGridApp
 
             if (endPoint is SpecialPoint spEnd)
             {
-                // Sluttpunkt som spesial: motor = 500, dør = 1000. Ingen justering
-                // nødvendig her da CalculateDistance ikke legger til 200 når
-                // sluttpunktet er spesial.
                 if (allCells.TryGetValue((spEnd.GlobalRow, spEnd.GlobalCol), out endCell))
                 {
                     extraDistance += spEnd.Type == SpecialPointType.Door ? 1000 : 500;
@@ -806,8 +906,6 @@ namespace WpfEGridApp
             }
             else if (endPoint is Button btnEnd)
             {
-                // Vanlig celle som slutt: ingen ekstra distanse her, da
-                // CalculateDistance allerede legger til 200 mm for sluttkoblingen.
                 endCell = allCells.Values.FirstOrDefault(c => c.ButtonRef == btnEnd);
             }
 
@@ -818,20 +916,10 @@ namespace WpfEGridApp
                 return;
             }
 
-            // Special handling when both points resolve to the same physical cell.
-            // In this case we always want the distance to be 300 mm regardless of
-            // whether the points are regular cells, motors or doors.  PathFinder
-            // would otherwise return a zero-length path which, combined with the
-            // existing compensation logic, yields much larger values for motors
-            // and doors (e.g. 1050 mm).  By overriding here we provide a
-            // consistent result for identical start and end points.
             if (startCell.Row == endCell.Row && startCell.Col == endCell.Col)
             {
-                // Highlight just this cell
                 HighlightPath(new List<Cell> { startCell });
-                // Fast distanse for identiske start- og sluttpunkter
                 double totalDistanceSame = 300;
-                // Display and log the measurement
                 ResultText.Text = $"Shortest path: {totalDistanceSame:F2} mm";
                 FindNextAvailableRow();
                 LogMeasurementToExcel(totalDistanceSame);
@@ -849,27 +937,16 @@ namespace WpfEGridApp
             }
 
             bool endsInSpecial = endPoint is SpecialPoint;
-            // Calculate the base distance using the same logic as PathFinder.  This
-            // includes a fixed 100 mm start connection and, if the end point is not
-            // a special point, a 200 mm end connection.  For measurements
-            // between two regular cells we want the total to be exactly 100 mm
-            // (start) + path distance + 200 mm (end) and NOT include any extra
-            // compensation or constant.  For other combinations (involving motors
-            // or doors) we preserve the existing logic with extra adjustments and
-            // the additional 50 mm.
             double baseDistance = PathFinder.CalculateDistance(path, endsInSpecial, HasHorizontalNeighbor);
             double totalDistance;
             bool startIsButton = startPoint is Button;
             bool endIsButton = endPoint is Button;
             if (startIsButton && endIsButton)
             {
-                // Both points are regular cells: use only the base distance.
                 totalDistance = baseDistance;
             }
             else
             {
-                // At least one point is a motor or door; use existing compensation and
-                // add the constant 50 mm as originally implemented.
                 totalDistance = baseDistance + extraDistance + 50;
             }
             HighlightPath(path);
@@ -1005,12 +1082,10 @@ namespace WpfEGridApp
                 _componentMappingManager = new ComponentMappingManager(this, SelectedExcelFile);
             }
 
-            // Store reference to the window
             _componentMappingWindow = new ComponentMappingWindow(this, _componentMappingManager);
             _componentMappingWindow.Show();
         }
 
-        // NY METODE - Refresh Excel knapp
         private void RefreshExcel_Click(object sender, RoutedEventArgs e)
         {
             try
@@ -1022,7 +1097,6 @@ namespace WpfEGridApp
                     return;
                 }
 
-                // Find next available row by scanning from row 2
                 _currentExcelRow = 2;
                 FindNextAvailableRow();
                 UpdateExcelDisplayText();
@@ -1042,11 +1116,9 @@ namespace WpfEGridApp
             _isInMappingMode = true;
             _mappingCompletedCallback = onCompleted;
 
-            // Show mapping indicator with reference text
             MappingIndicatorText.Text = $"Mapper: {excelReference}";
             MappingIndicator.Visibility = Visibility.Visible;
 
-            // Show cancel button only if not in sequential mapping mode
             if (!_isInSequentialMappingMode)
             {
                 CancelMappingButton.Visibility = Visibility.Visible;
@@ -1061,260 +1133,28 @@ namespace WpfEGridApp
                 ResultText.Text = $"Klikk på grid-posisjonen for {excelReference} (mellomrader, Door eller Motor knapper)";
             }
 
-            // Highlight mapping cells
             foreach (var cell in mappingCells.Values)
             {
                 cell.ButtonRef.Background = new SolidColorBrush(Color.FromRgb(100, 120, 140));
             }
 
-            // Disable regular cells
             foreach (var cell in allCells.Values)
             {
                 cell.ButtonRef.IsEnabled = false;
                 cell.ButtonRef.Background = new SolidColorBrush(Color.FromRgb(40, 40, 40));
             }
 
-            // Highlight Door and Motor buttons as mappable
             foreach (var dp in doorPoints)
             {
-                dp.Button.Background = new SolidColorBrush(Color.FromRgb(255, 140, 0)); // Orange highlight
+                dp.Button.Background = new SolidColorBrush(Color.FromRgb(255, 140, 0));
             }
             foreach (var mp in motorPoints)
             {
-                mp.Button.Background = new SolidColorBrush(Color.FromRgb(255, 140, 0)); // Orange highlight
+                mp.Button.Background = new SolidColorBrush(Color.FromRgb(255, 140, 0));
             }
 
             this.Activate();
             this.Focus();
-        }
-
-        /// <summary>
-        /// Start bulk mapping selection.  The user is prompted to select one or more
-        /// grid cells that represent a physical rail carrying a range of terminal
-        /// numbers (prefix:start-end).  Once the selection is completed via
-        /// FinishBulkMappingSelection, the callback is invoked with the prefix,
-        /// start and end values and the list of selected cell coordinates.
-        /// </summary>
-        public void StartBulkMappingSelection(string prefix, int startNumber, int endNumber,
-                                              Action<string, int, int, List<(int Row, int Col)>> onCompleted)
-        {
-            // Ensure any existing mapping or removal modes are disabled
-            EndMappingMode();
-            _isRemovingCells = false;
-
-            _isBulkMappingSelectionMode = true;
-            _bulkMappingPrefix = prefix;
-            _bulkMappingStart = startNumber;
-            _bulkMappingEnd = endNumber;
-            _bulkSelectedCells = new List<(int Row, int Col)>();
-            _bulkMappingCompletedCallback = onCompleted;
-
-            // Reset selected side state for this bulk selection
-            _bulkMappingSelectedIsTop = null;
-            BulkMappingSelectedIsTop = false;
-
-            // Display instructions to the user
-            MappingIndicatorText.Text = $"Bulk mapping: {prefix}:{startNumber}-{endNumber}. Velg flere celler i gridet.";
-            MappingIndicator.Visibility = Visibility.Visible;
-            CancelMappingButton.Visibility = Visibility.Visible;
-
-            // Show the Complete Bulk Mapping button in the overlay so the user can
-            // finish the bulk mapping directly from the main window without
-            // switching back to the ComponentMappingWindow.  It will be
-            // hidden again when bulk mapping ends.
-            if (CompleteBulkMappingButton != null)
-            {
-                CompleteBulkMappingButton.Visibility = Visibility.Visible;
-            }
-
-            // Enable all grid cells for selection and visually highlight them slightly
-            foreach (var cell in allCells.Values)
-            {
-                if (cell.ButtonRef != null)
-                {
-                    cell.ButtonRef.IsEnabled = true;
-                    // Light grey-blue highlight to indicate selectable state
-                    cell.ButtonRef.Background = new SolidColorBrush(Color.FromRgb(80, 120, 140));
-                }
-            }
-            // Enable mapping cells and highlight them similarly
-            foreach (var kvp in mappingCells)
-            {
-                var mappingCell = kvp.Value;
-                if (mappingCell.ButtonRef != null)
-                {
-                    mappingCell.ButtonRef.IsEnabled = true;
-                    mappingCell.ButtonRef.Background = new SolidColorBrush(Color.FromRgb(80, 120, 140));
-                }
-            }
-
-            // Disable door and motor buttons to avoid accidental selection during bulk mapping
-            foreach (var dp in doorPoints)
-                dp.Button.IsEnabled = false;
-            foreach (var mp in motorPoints)
-                mp.Button.IsEnabled = false;
-
-            // Inform the user in the ResultText as well
-            ResultText.Text = $"Bulk mapping: Velg grid-celler for {prefix}:{startNumber}-{endNumber}. Klikk igjen på et valgt celle for å fjerne den.";
-        }
-
-        /// <summary>
-        /// Completes the bulk mapping selection and calls the registered callback.  This
-        /// should be invoked by the ComponentMappingWindow when the user clicks the
-        /// 'Ferdig bulk mapping' button.  The selection will be cleared and the UI
-        /// restored to its normal state.
-        /// </summary>
-        public void FinishBulkMappingSelection()
-        {
-            if (!_isBulkMappingSelectionMode)
-                return;
-
-            // Capture state locally before resetting
-            var prefix = _bulkMappingPrefix;
-            var startNumber = _bulkMappingStart;
-            var endNumber = _bulkMappingEnd;
-            var selectedCells = _bulkSelectedCells != null ? new List<(int Row, int Col)>(_bulkSelectedCells) : new List<(int, int)>();
-
-            // End bulk mapping mode and restore UI
-            EndBulkMappingMode();
-
-            // Invoke callback if provided
-            _bulkMappingCompletedCallback?.Invoke(prefix, startNumber, endNumber, selectedCells);
-        }
-
-        /// <summary>
-        /// Cancels bulk mapping selection without invoking the callback.  This
-        /// method is called when the user presses the 'Avbryt Mapping' button
-        /// or presses Escape while in bulk mapping mode.
-        /// </summary>
-        private void CancelBulkMappingSelection()
-        {
-            if (!_isBulkMappingSelectionMode)
-                return;
-
-            EndBulkMappingMode();
-        }
-
-        /// <summary>
-        /// Internal helper to exit bulk mapping mode and restore the grid
-        /// appearance and enabled state.  Does not call any callbacks.
-        /// </summary>
-        private void EndBulkMappingMode()
-        {
-            // Reset selection mode flag
-            _isBulkMappingSelectionMode = false;
-            _bulkMappingPrefix = null;
-            _bulkMappingStart = 0;
-            _bulkMappingEnd = 0;
-            _bulkSelectedCells = null;
-            _bulkMappingCompletedCallback = null;
-            _bulkMappingSelectedIsTop = null;
-            BulkMappingSelectedIsTop = false;
-
-            // Restore grid cell colours and enablement
-            foreach (var cell in allCells.Values)
-            {
-                if (cell.ButtonRef != null)
-                {
-                    // Only reset cells that are still enabled (not removed)
-                    if (cell.ButtonRef.IsEnabled)
-                    {
-                        cell.ButtonRef.Background = new SolidColorBrush(Color.FromRgb(74, 90, 91));
-                    }
-                }
-            }
-            foreach (var kvp in mappingCells)
-            {
-                var mappingCell = kvp.Value;
-                if (mappingCell.ButtonRef != null)
-                {
-                    var content = mappingCell.ButtonRef.Content?.ToString();
-                    if (content == "T")
-                        mappingCell.ButtonRef.Background = new SolidColorBrush(Color.FromRgb(80, 90, 100));
-                    else if (content == "B")
-                        mappingCell.ButtonRef.Background = new SolidColorBrush(Color.FromRgb(60, 70, 80));
-                }
-            }
-
-            // Re-enable door and motor buttons
-            foreach (var dp in doorPoints)
-                dp.Button.IsEnabled = true;
-            foreach (var mp in motorPoints)
-                mp.Button.IsEnabled = true;
-
-            // Hide mapping indicator
-            MappingIndicator.Visibility = Visibility.Collapsed;
-            CancelMappingButton.Visibility = Visibility.Collapsed;
-            // Hide Complete Bulk Mapping button when ending bulk selection
-            if (CompleteBulkMappingButton != null)
-            {
-                CompleteBulkMappingButton.Visibility = Visibility.Collapsed;
-            }
-            ResultText.Text = string.Empty;
-        }
-
-        private void CancelMapping_Click(object sender, RoutedEventArgs e)
-        {
-            // Cancel whichever mapping mode is active.  If a single interactive mapping
-            // is in progress, end it.  If a bulk mapping selection is in progress,
-            // cancel it without invoking any callbacks.  Otherwise do nothing.
-            if (_isInMappingMode)
-            {
-                EndMappingMode();
-            }
-            else if (_isBulkMappingSelectionMode)
-            {
-                CancelBulkMappingSelection();
-            }
-        }
-
-        /// <summary>
-        /// Handles the click on the "Ferdig bulk mapping" button that appears in the
-        /// main window during bulk mapping.  This simply finishes the bulk
-        /// mapping selection, invoking any registered callback and restoring
-        /// the UI to its normal state.  The button is hidden again once
-        /// the selection is complete.
-        /// </summary>
-        private void CompleteBulkMappingButton_Click(object sender, RoutedEventArgs e)
-        {
-            FinishBulkMappingSelection();
-        }
-
-        /// <summary>
-        /// Toggle cell removal mode on or off.  When removal mode is active
-        /// clicking on a regular grid cell will remove it from the UI and
-        /// underlying data structure so it is no longer considered in
-        /// subsequent measurements.  Toggling the mode off restores normal
-        /// measurement behaviour.  The button's label is updated to reflect
-        /// the current state and a message is shown in the result text to
-        /// guide the user.
-        /// </summary>
-        private void RemoveCellsButton_Click(object sender, RoutedEventArgs e)
-        {
-            _isRemovingCells = !_isRemovingCells;
-            if (_isRemovingCells)
-            {
-                // Enter removal mode: update button text and inform user
-                if (RemoveCellsButton != null)
-                {
-                    RemoveCellsButton.Content = "Ferdig fjerning";
-                }
-                // Clear any current selection and locked points
-                startPoint = null;
-                endPoint = null;
-                ResultText.Text = "Klikk på cellene du vil fjerne.";
-            }
-            else
-            {
-                // Exit removal mode: restore button text and clear message
-                if (RemoveCellsButton != null)
-                {
-                    RemoveCellsButton.Content = "Fjern celler";
-                }
-                ResultText.Text = _lockedPointA != null ? $"Locked point A: {_lockedPointA.Type} {_lockedPointA.SectionIndex + 1}" : "";
-                // Reset any temporary highlights
-                ResetSelection();
-            }
         }
 
         public void UpdateExcelDisplayText()
@@ -1479,13 +1319,11 @@ namespace WpfEGridApp
             _lockedButton = null;
             _currentExcelRow = 2;
             BuildAllSections();
-            // Reset removal mode when rebuilding the grid to avoid stale state
             _isRemovingCells = false;
             if (RemoveCellsButton != null)
             {
                 RemoveCellsButton.Content = "Fjern celler";
             }
-            // Reset sequential mapping mode when rebuilding
             EndSequentialMappingMode();
             UpdateExcelDisplayText();
         }
@@ -1502,7 +1340,6 @@ namespace WpfEGridApp
                 SelectedExcelFile = openFileDialog.FileName;
                 if (InitializeExcel(SelectedExcelFile))
                 {
-                    // Fjernet success melding som ønsket
                     _currentExcelRow = 2;
                     _componentMappingManager = new ComponentMappingManager(this, SelectedExcelFile);
                     UpdateExcelDisplayText();
@@ -1549,7 +1386,6 @@ namespace WpfEGridApp
             }
         }
 
-        // === Eksport og reset-knapper ===
         private void ExportDataToNord_Click(object sender, RoutedEventArgs e)
         {
             try
@@ -1617,18 +1453,12 @@ namespace WpfEGridApp
             }
         }
 
-        /// <summary>
-        /// Helper to write a value to a worksheet cell and optionally apply a background colour.
-        /// Some Excel.Range objects may be null (e.g. when worksheet is protected); exceptions
-        /// are ignored for colour assignment.  The value parameter can be null or empty.
-        /// </summary>
         private static void WriteCellWithColour(Excel.Worksheet sheet, int row, int col, string value, uint colour)
         {
             try
             {
                 var rng = (Excel.Range)sheet.Cells[row, col];
                 rng.Value2 = value;
-                // Apply colour only if non-zero (zero indicates no colour or error)
                 if (colour != 0)
                 {
                     rng.Interior.Color = colour;
@@ -1636,7 +1466,6 @@ namespace WpfEGridApp
             }
             catch
             {
-                // Ignore errors applying colour (e.g. locked cells)
                 try
                 {
                     var rng = (Excel.Range)sheet.Cells[row, col];
@@ -1644,7 +1473,6 @@ namespace WpfEGridApp
                 }
                 catch
                 {
-                    // swallow any error
                 }
             }
         }
@@ -1656,26 +1484,21 @@ namespace WpfEGridApp
             Excel.Worksheet ws = null;
             try
             {
-                // Reuse existing Excel application if available to keep files open after export
                 app = excelApp ?? new Excel.Application();
                 app.Visible = true;
                 wb = app.Workbooks.Open(destPath);
 
-                // Finn riktig ark å skrive til
                 ws = FindWorksheetByName(wb, "mal ferdig ledning");
                 if (ws == null)
                     throw new InvalidOperationException("Finner ikke arket 'mal ferdig ledning' i eksportfilen.");
 
-                // Finn siste rad i kildefilens data ved å bruke UsedRange
                 var used = sourceSheet.UsedRange;
                 int lastRow = used != null ? used.Rows.Count : 2;
                 if (lastRow < 2) lastRow = 2;
 
-                // Iterer gjennom alle rader fra rad 2 og kopier de som har data i minst én av de 7 første kolonnene
                 for (int srcRow = 2; srcRow <= lastRow; srcRow++)
                 {
                     bool hasData = false;
-                    // Kontroller om raden har tekst eller tall i de første 7 kolonnene
                     for (int c = 1; c <= 7; c++)
                     {
                         var val = SafeCellToString(sourceSheet, srcRow, c);
@@ -1687,7 +1510,6 @@ namespace WpfEGridApp
                     }
                     if (!hasData) continue;
 
-                    // Les verdier og farger fra kildefilen for de 7 kolonnene
                     string[] src = new string[7];
                     uint[] colours = new uint[7];
                     for (int i = 0; i < 7; i++)
@@ -1704,26 +1526,21 @@ namespace WpfEGridApp
                         }
                     }
 
-                    // Destinasjonsrad: flytt alle kilderader én rad ned (rad 2 -> dest 3, rad 3 -> dest 4, osv.)
                     int destRow = srcRow + 1;
 
-                    // Skriv verdier og farger til destinasjonsarket
-                    // Mapping: kolonne 1->C, 2->F, 3->G, 4->B, 5->D, 6->E, 7->J
-                    WriteCellWithColour(ws, destRow, 3, src[0], colours[0]); // C
-                    WriteCellWithColour(ws, destRow, 6, src[1], colours[1]); // F
-                    WriteCellWithColour(ws, destRow, 7, src[2], colours[2]); // G
-                    WriteCellWithColour(ws, destRow, 2, src[3], colours[3]); // B
-                    WriteCellWithColour(ws, destRow, 4, src[4], colours[4]); // D
-                    WriteCellWithColour(ws, destRow, 5, src[5], colours[5]); // E
-                    WriteCellWithColour(ws, destRow, 10, src[6], colours[6]); // J
+                    WriteCellWithColour(ws, destRow, 3, src[0], colours[0]);
+                    WriteCellWithColour(ws, destRow, 6, src[1], colours[1]);
+                    WriteCellWithColour(ws, destRow, 7, src[2], colours[2]);
+                    WriteCellWithColour(ws, destRow, 2, src[3], colours[3]);
+                    WriteCellWithColour(ws, destRow, 4, src[4], colours[4]);
+                    WriteCellWithColour(ws, destRow, 5, src[5], colours[5]);
+                    WriteCellWithColour(ws, destRow, 10, src[6], colours[6]);
                 }
 
-                // Lagre endringer i destinasjonsfilen
                 wb.Save();
             }
             finally
             {
-                // Slipp referansen til arket; la workbook og app forbli åpne slik at filen ikke lukkes
                 if (ws != null) Marshal.ReleaseComObject(ws);
                 ws = null;
                 wb = null;
@@ -1738,22 +1555,18 @@ namespace WpfEGridApp
             Excel.Worksheet ws = null;
             try
             {
-                // Reuse existing Excel application if available to keep files open after export
                 app = excelApp ?? new Excel.Application();
                 app.Visible = true;
                 wb = app.Workbooks.Open(destPath);
 
-                // Velg ark: prøv "Durapart", ellers første ark
                 ws = FindWorksheetByName(wb, "Durapart");
                 if (ws == null)
                     ws = (Excel.Worksheet)wb.Worksheets[1];
 
-                // Finn siste rad i kildefilen
                 var used = sourceSheet.UsedRange;
                 int lastRow = used != null ? used.Rows.Count : 2;
                 if (lastRow < 2) lastRow = 2;
 
-                // Iterer gjennom kilderader og kopier data og farge til destinasjonen
                 for (int srcRow = 2; srcRow <= lastRow; srcRow++)
                 {
                     bool hasData = false;
@@ -1786,14 +1599,12 @@ namespace WpfEGridApp
 
                     int destRow = srcRow + 1;
 
-                    // Mapping for Durapart: kolonne 1->G, 2->D, 3->I, 4->F, 5->E, 6->J
-                    WriteCellWithColour(ws, destRow, 7, src[0], colours[0]); // G
-                    WriteCellWithColour(ws, destRow, 4, src[1], colours[1]); // D
-                    WriteCellWithColour(ws, destRow, 9, src[2], colours[2]); // I
-                    WriteCellWithColour(ws, destRow, 6, src[3], colours[3]); // F
-                    WriteCellWithColour(ws, destRow, 5, src[4], colours[4]); // E
-                    WriteCellWithColour(ws, destRow, 10, src[5], colours[5]); // J
-                    // src[6] (kolonne 7 i A) flyttes ikke
+                    WriteCellWithColour(ws, destRow, 7, src[0], colours[0]);
+                    WriteCellWithColour(ws, destRow, 4, src[1], colours[1]);
+                    WriteCellWithColour(ws, destRow, 9, src[2], colours[2]);
+                    WriteCellWithColour(ws, destRow, 6, src[3], colours[3]);
+                    WriteCellWithColour(ws, destRow, 5, src[4], colours[4]);
+                    WriteCellWithColour(ws, destRow, 10, src[5], colours[5]);
                 }
 
                 wb.Save();
@@ -1859,10 +1670,6 @@ namespace WpfEGridApp
         }
     }
 
-    // Resten av koden forblir uendret (PathFinder, Cell, SpecialPoint, PriorityQueue, ExcelConnectionProcessor)
-    // Dette er i en egen fil som følger...
-    // Dette er fortsettelsen av MainWindow.xaml.cs - alle hjelpeklasser
-
     public static class PathFinder
     {
         public static List<Cell> FindShortestPath(Cell start, Cell end, Dictionary<(int, int), Cell> allCells, Func<int, int, bool> hasHorizontalNeighbor)
@@ -1925,13 +1732,13 @@ namespace WpfEGridApp
         {
             if (path == null || path.Count == 0) return 0;
 
-            double distance = 100; // Start connection
+            double distance = 100;
 
             for (int i = 1; i < path.Count - 1; i++)
                 distance += hasHorizontalNeighbor(path[i].Row, path[i].Col) ? 100 : 50;
 
             if (!endsInSpecial)
-                distance += 200; // End connection
+                distance += 200;
 
             return distance;
         }
@@ -1985,8 +1792,8 @@ namespace WpfEGridApp
             return result;
         }
     }
+    // ExcelConnectionProcessor - legg til ETTER PriorityQueue klassen i MainWindow.xaml.cs
 
-    // ExcelConnectionProcessor klassen med støtte for bulk mapping
     public class ExcelConnectionProcessor
     {
         private readonly MainWindow _mainWindow;
@@ -2017,7 +1824,6 @@ namespace WpfEGridApp
                 {
                     try
                     {
-                        // Les kolonne B og C (referanser) og A (måleverdi)
                         string cellB = "";
                         string cellC = "";
                         object cellA = null;
@@ -2026,25 +1832,21 @@ namespace WpfEGridApp
                         try { cellC = _mainWindow.worksheet.Cells[row, 3].Value?.ToString() ?? ""; } catch { }
                         try { cellA = _mainWindow.worksheet.Cells[row, 1].Value; } catch { }
 
-                        // Skipp dersom cellen allerede har en beregnet verdi
                         if (cellA != null && !string.IsNullOrEmpty(cellA.ToString()) &&
                             double.TryParse(cellA.ToString(), out _))
                             continue;
 
-                        // Skipp hvis ingen referanser
                         if (string.IsNullOrWhiteSpace(cellB) && string.IsNullOrWhiteSpace(cellC))
                             continue;
 
-                        // Hent mappinger
                         var mappingA = _mappingManager.GetMapping(cellB);
                         var mappingB = _mappingManager.GetMapping(cellC);
                         var bulkA = _mappingManager.GetBulkRangeMappingForReference(cellB);
                         var bulkB = _mappingManager.GetBulkRangeMappingForReference(cellC);
 
-                        // Hvis begge referanser tilhører bulk‑range
+                        // BULK TIL BULK: FINN LENGSTE VEI
                         if (bulkA != null && bulkB != null)
                         {
-                            // Samle kandidat-koordinater for hver referanse
                             var candidateA = GetCandidateCellsForBulkReference(bulkA, cellB, allCells);
                             var candidateB = GetCandidateCellsForBulkReference(bulkB, cellC, allCells);
 
@@ -2052,12 +1854,10 @@ namespace WpfEGridApp
                             double connB = GetConnectionDistance(cellC, mappingB);
                             double maxDistance = 0;
 
-                            // Finn LENGSTE avstand mellom alle kombinasjoner
                             foreach (var posA in candidateA)
                             {
                                 foreach (var posB in candidateB)
                                 {
-                                    // Samme posisjon = 300 mm
                                     if (posA.Row == posB.Row && posA.Col == posB.Col)
                                     {
                                         maxDistance = Math.Max(maxDistance, 300.0);
@@ -2088,14 +1888,13 @@ namespace WpfEGridApp
                                 continue;
                             }
                         }
-                        // Hvis en er bulk og den andre er vanlig mapping
+                        // BULK TIL VANLIG ELLER VANLIG TIL BULK: FINN LENGSTE VEI
                         else if ((bulkA != null && mappingB != null) || (mappingA != null && bulkB != null))
                         {
                             double maxDistance = 0;
 
                             if (bulkA != null && mappingB != null)
                             {
-                                // A er bulk, B er vanlig
                                 var candidateA = GetCandidateCellsForBulkReference(bulkA, cellB, allCells);
                                 var posB = GetGridPositionFromMapping(mappingB);
 
@@ -2131,7 +1930,6 @@ namespace WpfEGridApp
                             }
                             else if (mappingA != null && bulkB != null)
                             {
-                                // A er vanlig, B er bulk
                                 var posA = GetGridPositionFromMapping(mappingA);
                                 var candidateB = GetCandidateCellsForBulkReference(bulkB, cellC, allCells);
 
@@ -2174,7 +1972,7 @@ namespace WpfEGridApp
                             }
                         }
 
-                        // Hvis kun vanlig mapping (ikke bulk)
+                        // VANLIG MAPPING TIL VANLIG MAPPING
                         if (mappingA != null && mappingB != null)
                         {
                             var posA = GetGridPositionFromMapping(mappingA);
@@ -2195,7 +1993,6 @@ namespace WpfEGridApp
                                     var path = PathFinder.FindShortestPath(startCell, endCell, allCells, _mainWindow.HasHorizontalNeighbor);
                                     if (path != null && path.Count > 0)
                                     {
-                                        // Kun grid-avstand (uten start- og slutt-tilkobling)
                                         double pathDistance = 0;
                                         for (int i = 1; i < path.Count - 1; i++)
                                             pathDistance += _mainWindow.HasHorizontalNeighbor(path[i].Row, path[i].Col) ? 100 : 50;
@@ -2248,14 +2045,13 @@ namespace WpfEGridApp
 
         private (int Row, int Col)? GetGridPositionFromMapping(ComponentMapping mapping)
         {
-            // Handle special points (Motors and Doors)
-            if (mapping.GridRow == -1 && mapping.GridColumn >= 1000) // Motor
+            if (mapping.GridRow == -1 && mapping.GridColumn >= 1000)
             {
                 var motorIndex = mapping.GridColumn - 1000;
                 var motorPoint = _mainWindow.GetMotorPoint(motorIndex);
                 return motorPoint != null ? (motorPoint.GlobalRow, motorPoint.GlobalCol) : null;
             }
-            else if (mapping.GridRow == -2 && mapping.GridColumn >= 1000) // Door
+            else if (mapping.GridRow == -2 && mapping.GridColumn >= 1000)
             {
                 var doorIndex = mapping.GridColumn - 1000;
                 var doorPoint = _mainWindow.GetDoorPoint(doorIndex);
@@ -2263,38 +2059,31 @@ namespace WpfEGridApp
             }
             else
             {
-                // Handle bottom side mappings (negative rows)
                 if (mapping.GridRow < 0)
                 {
-                    // Convert negative row back to positive for allCells lookup
                     int actualRow = -(mapping.GridRow + 1);
                     return (actualRow, mapping.GridColumn);
                 }
                 else
                 {
-                    // Handle top side (T) mappings
                     int adjustedRow = mapping.GridRow;
                     var allCells = _mainWindow.GetAllCells();
 
-                    // Try the exact position first
                     if (allCells.ContainsKey((mapping.GridRow, mapping.GridColumn)))
                     {
                         return (mapping.GridRow, mapping.GridColumn);
                     }
 
-                    // If DefaultToBottom, try the row below
                     if (mapping.DefaultToBottom && allCells.ContainsKey((mapping.GridRow + 1, mapping.GridColumn)))
                     {
                         return (mapping.GridRow + 1, mapping.GridColumn);
                     }
 
-                    // Try the row above
                     if (allCells.ContainsKey((mapping.GridRow - 1, mapping.GridColumn)))
                     {
                         return (mapping.GridRow - 1, mapping.GridColumn);
                     }
 
-                    // Return original if nothing else works
                     return (mapping.GridRow, mapping.GridColumn);
                 }
             }
@@ -2306,16 +2095,14 @@ namespace WpfEGridApp
 
             bool hasAsterisk = text.Contains("*");
 
-            // Special points get their fixed distances
             if (mapping != null)
             {
-                if (mapping.GridRow == -1) // Motor
+                if (mapping.GridRow == -1)
                     return 500;
-                else if (mapping.GridRow == -2) // Door
+                else if (mapping.GridRow == -2)
                     return 1000;
             }
 
-            // Component-based distances
             if (text.Contains("F", StringComparison.OrdinalIgnoreCase))
                 return hasAsterisk ? 50 : 30;
             else if (text.Contains("X", StringComparison.OrdinalIgnoreCase))
@@ -2332,12 +2119,6 @@ namespace WpfEGridApp
                 return 25;
         }
 
-        /// <summary>
-        /// Returns a list of candidate grid cell coordinates for a reference within a bulk
-        /// range.  The returned coordinates depend on whether the reference ends
-        /// with an asterisk (*), which indicates that the reference should be
-        /// mapped to the opposite side of the selected bulk mapping cells.
-        /// </summary>
         private List<(int Row, int Col)> GetCandidateCellsForBulkReference(ComponentMappingManager.BulkRangeMapping bulkRange, string excelReference, Dictionary<(int, int), Cell> allCells)
         {
             var result = new List<(int Row, int Col)>();
@@ -2353,7 +2134,6 @@ namespace WpfEGridApp
 
                 if (hasStar)
                 {
-                    // Star references map to the opposite side
                     int oppositeRow = selectedIsTop ? row + 1 : row - 1;
                     if (allCells.ContainsKey((oppositeRow, col)))
                     {
@@ -2362,7 +2142,6 @@ namespace WpfEGridApp
                 }
                 else
                 {
-                    // Use the selected side as-is if the cell exists
                     if (allCells.ContainsKey((row, col)))
                     {
                         result.Add((row, col));
@@ -2370,7 +2149,6 @@ namespace WpfEGridApp
                 }
             }
 
-            // If no candidates were added, fall back to the original selected cells
             if (result.Count == 0)
             {
                 foreach (var cell in bulkRange.Cells)
@@ -2382,7 +2160,6 @@ namespace WpfEGridApp
                 }
             }
 
-            // Remove any duplicates
             return result.Distinct().ToList();
         }
 

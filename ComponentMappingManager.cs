@@ -9,10 +9,10 @@ namespace WpfEGridApp
 {
     public class ComponentMapping
     {
-        public string ExcelReference { get; set; } // F1, X2:, K3, etc.
+        public string ExcelReference { get; set; }
         public int GridRow { get; set; }
         public int GridColumn { get; set; }
-        public bool DefaultToBottom { get; set; } // Default side for this mapping
+        public bool DefaultToBottom { get; set; }
     }
 
     public class ComponentMappingManager
@@ -119,20 +119,14 @@ namespace WpfEGridApp
             return bestMatch;
         }
 
-        /// <summary>
-        /// Legger til en mapping. Hvis referansen inneholder stjerne (*), opprettes også
-        /// automatisk en mapping for motsatt side uten stjerne (og omvendt).
-        /// </summary>
         public void AddMapping(string excelReference, int gridRow, int gridCol, bool defaultToBottom = false)
         {
             var cleanRef = excelReference.Trim();
 
-            // Sjekk om referansen har stjerne
             bool hasStar = cleanRef.EndsWith("*");
             string baseRef = hasStar ? cleanRef.TrimEnd('*') : cleanRef;
             string starRef = hasStar ? cleanRef : cleanRef + "*";
 
-            // Legg til hovedmapping
             _mappings[cleanRef] = new ComponentMapping
             {
                 ExcelReference = cleanRef,
@@ -141,11 +135,8 @@ namespace WpfEGridApp
                 DefaultToBottom = defaultToBottom
             };
 
-            // Legg til automatisk mapping for motsatt side
-            // Hvis vi mapper X2:128 til T, så mappes X2:128* automatisk til B (og omvendt)
             if (hasStar)
             {
-                // cleanRef har stjerne, så baseRef skal mappes til motsatt side
                 _mappings[baseRef] = new ComponentMapping
                 {
                     ExcelReference = baseRef,
@@ -156,7 +147,6 @@ namespace WpfEGridApp
             }
             else
             {
-                // cleanRef har ikke stjerne, så starRef skal mappes til motsatt side
                 _mappings[starRef] = new ComponentMapping
                 {
                     ExcelReference = starRef,
@@ -184,17 +174,23 @@ namespace WpfEGridApp
             public bool SelectedIsTop { get; set; }
         }
 
+        /// <summary>
+        /// FIKSET: Legger til bulk range mapping og oppretter automatisk individuelle mappings
+        /// for hver referanse (base og starred) til ALLE valgte celler.
+        /// </summary>
         public void AddBulkRangeMapping(string prefix, int startIndex, int endIndex, List<(int Row, int Col)> selectedCells, bool selectedIsTop)
         {
             if (string.IsNullOrWhiteSpace(prefix)) throw new ArgumentException(nameof(prefix));
             if (endIndex < startIndex) throw new ArgumentException("endIndex < startIndex");
             if (selectedCells == null || selectedCells.Count == 0) throw new ArgumentException("selectedCells");
 
+            // Fjern eksisterende bulk mapping for samme range
             _bulkRangeMappings.RemoveAll(b =>
                 b.Prefix.Equals(prefix, StringComparison.OrdinalIgnoreCase) &&
                 b.StartIndex == startIndex &&
                 b.EndIndex == endIndex);
 
+            // Opprett bulk range mapping
             var bulk = new BulkRangeMapping
             {
                 Prefix = prefix,
@@ -208,7 +204,42 @@ namespace WpfEGridApp
             };
 
             _bulkRangeMappings.Add(bulk);
+
+            // VIKTIG: Opprett individuelle mappings for hver referanse i bulk range
+            // Dette gjør at GetMapping() kan finne dem!
+            for (int i = startIndex; i <= endIndex; i++)
+            {
+                string baseReference = $"{prefix}:{i}";
+                string starReference = $"{prefix}:{i}*";
+
+                // Map base reference til alle valgte celler
+                // Vi bruker første celle som "hovedmapping", men lagrer alle i bulk
+                var firstCell = selectedCells.First();
+
+                // Base reference (uten stjerne) mappes til valgt side
+                _mappings[baseReference] = new ComponentMapping
+                {
+                    ExcelReference = baseReference,
+                    GridRow = firstCell.Row,
+                    GridColumn = firstCell.Col,
+                    DefaultToBottom = !selectedIsTop // If T selected, DefaultToBottom=false
+                };
+
+                // Starred reference mappes til motsatt side
+                // Hvis selectedIsTop (T-celler), så mappes starred til B-siden (row+1)
+                int oppositeRow = selectedIsTop ? firstCell.Row + 1 : firstCell.Row - 1;
+
+                _mappings[starReference] = new ComponentMapping
+                {
+                    ExcelReference = starReference,
+                    GridRow = oppositeRow,
+                    GridColumn = firstCell.Col,
+                    DefaultToBottom = selectedIsTop // Opposite of base
+                };
+            }
+
             SaveBulkMappings();
+            SaveMappings();
         }
 
         public void RemoveBulkRangeMapping(string prefix, int startIndex, int endIndex)
@@ -217,7 +248,18 @@ namespace WpfEGridApp
                 b.Prefix.Equals(prefix, StringComparison.OrdinalIgnoreCase) &&
                 b.StartIndex == startIndex &&
                 b.EndIndex == endIndex);
+
+            // Fjern også alle individuelle mappings for dette bulk range
+            for (int i = startIndex; i <= endIndex; i++)
+            {
+                string baseRef = $"{prefix}:{i}";
+                string starRef = $"{prefix}:{i}*";
+                _mappings.Remove(baseRef);
+                _mappings.Remove(starRef);
+            }
+
             SaveBulkMappings();
+            SaveMappings();
         }
 
         public List<BulkRangeMapping> GetAllBulkRanges() => _bulkRangeMappings.ToList();
@@ -226,8 +268,26 @@ namespace WpfEGridApp
         {
             var allMappings = new List<ComponentMapping>();
 
-            allMappings.AddRange(_mappings.Values);
+            // Legg til vanlige mappings, men filtrer bort de som tilhører bulk ranges
+            var bulkReferences = new HashSet<string>();
+            foreach (var bulk in _bulkRangeMappings)
+            {
+                for (int i = bulk.StartIndex; i <= bulk.EndIndex; i++)
+                {
+                    bulkReferences.Add($"{bulk.Prefix}:{i}");
+                    bulkReferences.Add($"{bulk.Prefix}:{i}*");
+                }
+            }
 
+            foreach (var mapping in _mappings.Values)
+            {
+                if (!bulkReferences.Contains(mapping.ExcelReference))
+                {
+                    allMappings.Add(mapping);
+                }
+            }
+
+            // Legg til bulk ranges som egne display items
             foreach (var bulk in _bulkRangeMappings)
             {
                 var displayMapping = new ComponentMapping
@@ -246,15 +306,20 @@ namespace WpfEGridApp
         public BulkRangeMapping GetBulkRangeMappingForReference(string excelReference)
         {
             if (string.IsNullOrWhiteSpace(excelReference)) return null;
-            var cleaned = excelReference.Trim();
+            var cleaned = excelReference.Trim().TrimEnd('*');
             var parts = cleaned.Split(':');
             if (parts.Length != 2) return null;
             var prefix = parts[0];
-            var numPart = parts[1].TrimEnd('*');
+            var numPart = parts[1];
             if (!int.TryParse(numPart, out var index)) return null;
             return _bulkRangeMappings.FirstOrDefault(b =>
                 b.Prefix.Equals(prefix, StringComparison.OrdinalIgnoreCase) &&
                 index >= b.StartIndex && index <= b.EndIndex);
+        }
+
+        public bool IsReferenceInBulkRange(string reference)
+        {
+            return GetBulkRangeMappingForReference(reference) != null;
         }
 
         private void SaveBulkMappings()
@@ -297,6 +362,7 @@ namespace WpfEGridApp
         {
             var cleanRef = excelReference.Trim();
 
+            // Sjekk om dette er en bulk range referanse (format: X2:21-100)
             if (cleanRef.Contains("-"))
             {
                 var parts = cleanRef.Split(':');
@@ -314,7 +380,6 @@ namespace WpfEGridApp
                 }
             }
 
-            // Fjern både med og uten stjerne når en mapping slettes
             bool hasStar = cleanRef.EndsWith("*");
             string baseRef = hasStar ? cleanRef.TrimEnd('*') : cleanRef;
             string starRef = hasStar ? cleanRef : cleanRef + "*";

@@ -114,7 +114,7 @@ namespace WpfEGridApp
             try
             {
                 var uniqueCells = GetUniqueExcelCellsOrdered();
-                var unmappedCells = FilterUnmappedCells(uniqueCells);
+                var unmappedCells = FilterUnmappedCellsExcludingBulk(uniqueCells);
 
                 if (unmappedCells.Count == 0)
                 {
@@ -130,7 +130,7 @@ namespace WpfEGridApp
                 _mainWindow.StartSequentialMappingMode();
                 ProcessNextSpecificMapping();
                 this.WindowState = WindowState.Minimized;
-                UpdateStatus($"Starter spesifikk mapping av {unmappedCells.Count} celler.");
+                UpdateStatus($"Starter spesifikk mapping av {unmappedCells.Count} celler (ekskluderer bulk-mappede referanser).");
             }
             catch (Exception ex)
             {
@@ -146,7 +146,6 @@ namespace WpfEGridApp
 
             var lastRow = usedRange.Rows.Count;
 
-            // Samle alle unike referanser fra både kolonne B og C
             for (int row = 2; row <= lastRow; row++)
             {
                 try
@@ -160,17 +159,21 @@ namespace WpfEGridApp
                 catch { }
             }
 
-            // Returner sortert alfabetisk
             return allCells.OrderBy(x => x).ToList();
         }
 
-        private List<string> FilterUnmappedCells(List<string> cells)
+        private List<string> FilterUnmappedCellsExcludingBulk(List<string> cells)
         {
             var unmappedCells = new List<string>();
             foreach (var cell in cells)
             {
-                if (!_mappingManager.IsReferenceMapped(cell))
-                    unmappedCells.Add(cell);
+                if (_mappingManager.IsReferenceMapped(cell))
+                    continue;
+
+                if (_mappingManager.IsReferenceInBulkRange(cell))
+                    continue;
+
+                unmappedCells.Add(cell);
             }
             return unmappedCells;
         }
@@ -190,7 +193,8 @@ namespace WpfEGridApp
             {
                 var currentCell = _specificMappingQueue.Peek();
 
-                if (_mappingManager.IsReferenceMapped(currentCell))
+                if (_mappingManager.IsReferenceMapped(currentCell) ||
+                    _mappingManager.IsReferenceInBulkRange(currentCell))
                 {
                     _specificMappingQueue.Dequeue();
                     continue;
@@ -231,8 +235,6 @@ namespace WpfEGridApp
                     newQueue.Enqueue(_specificMappingQueue.Dequeue());
 
                 _specificMappingQueue = newQueue;
-
-                // VIKTIG: Ikke sett waiting flag - MainWindow håndterer restart av mapping
                 _waitingForUserMapping = false;
 
                 UpdateStatus($"Angret mapping for '{reference}' - klar for ny mapping. ({_specificMappingQueue.Count - 1} gjenstår etter denne)");
@@ -296,12 +298,15 @@ namespace WpfEGridApp
             _bulkEnd = endNum;
             FinishBulkMappingButton.Visibility = Visibility.Visible;
 
-            UpdateStatus($"Bulk mapping: velg grid-celler for {prefix}:{startNum}-{endNum}. Klikk på 'Ferdig bulk mapping' når du er ferdig.");
+            UpdateStatus($"Bulk mapping: velg grid-celler for {prefix}:{startNum}-{endNum}. Klikk 'Ferdig bulk mapping' når ferdig.");
 
             MessageBox.Show(
-                "Bulk mapping startet. Gå tilbake til hovedvinduet og klikk på en eller flere T/B-celler for å velge posisjoner.\n\n" +
-                "Når du er ferdig, klikk på 'Ferdig bulk mapping' i hovedvinduet for å fullføre.",
-                "Bulk mapping", MessageBoxButton.OK, MessageBoxImage.Information);
+                $"Bulk mapping startet for {prefix}:{startNum}-{endNum}.\n\n" +
+                "1. Gå tilbake til hovedvinduet\n" +
+                "2. Klikk på T-celler ELLER B-celler (1 eller flere)\n" +
+                "3. Klikk 'Ferdig bulk mapping' i hovedvinduet\n\n" +
+                $"Dette vil mappe alle {endNum - startNum + 1} referanser til de valgte cellene.",
+                "Bulk Mapping", MessageBoxButton.OK, MessageBoxImage.Information);
 
             _mainWindow.StartBulkMappingSelection(prefix, startNum, endNum, OnBulkMappingCompleted);
             this.WindowState = WindowState.Minimized;
@@ -339,17 +344,31 @@ namespace WpfEGridApp
                     }
 
                     bool selectedIsTop = _mainWindow.BulkMappingSelectedIsTop;
+
+                    // VIKTIG: Kall AddBulkRangeMapping med de valgte cellene
                     _mappingManager.AddBulkRangeMapping(prefix, startNumber, endNumber, cells, selectedIsTop);
 
                     FinishBulkMappingButton.Visibility = Visibility.Collapsed;
                     _isBulkMappingMode = false;
                     NewExcelReference.Clear();
 
+                    // Reload mappings for å vise de nye
                     LoadExistingMappings();
+
+                    int totalReferences = (endNumber - startNumber + 1) * 2;
+                    string message = $"Bulk mapping fullført!\n\n" +
+                        $"Range: {prefix}:{startNumber}-{endNumber}\n" +
+                        $"Celler valgt: {cells.Count}\n" +
+                        $"Side: {(selectedIsTop ? "T (oversiden)" : "B (undersiden)")}\n\n" +
+                        $"Totalt {totalReferences} referanser mappet:\n" +
+                        $"- {endNumber - startNumber + 1} base referanser (eks: {prefix}:{startNumber})\n" +
+                        $"- {endNumber - startNumber + 1} stjerne referanser (eks: {prefix}:{startNumber}*)";
+
+                    MessageBox.Show(message, "Bulk Mapping Fullført", MessageBoxButton.OK, MessageBoxImage.Information);
 
                     this.WindowState = WindowState.Normal;
                     this.Activate();
-                    UpdateStatus($"Bulk mapping lagret: {prefix}:{startNumber}-{endNumber} ({cells.Count} celler)");
+                    UpdateStatus($"Bulk mapping lagret: {prefix}:{startNumber}-{endNumber} ({cells.Count} celler, {totalReferences} ref)");
                 }
                 catch (Exception ex)
                 {
@@ -459,11 +478,14 @@ namespace WpfEGridApp
 
                 foreach (var reference in foundReferences.OrderBy(r => r))
                 {
+                    if (_mappingManager.IsReferenceInBulkRange(reference))
+                        continue;
+
                     if (!_mappingManager.HasMapping(reference))
                         UnmappedReferences.Add(new UnmappedReferenceItem { Reference = reference, IsSelected = false });
                 }
 
-                UpdateStatus($"Fant {UnmappedReferences.Count} umappede base-referanser av totalt {foundReferences.Count}");
+                UpdateStatus($"Fant {UnmappedReferences.Count} umappede base-referanser (ekskluderer bulk ranges)");
             }
             catch (Exception ex)
             {
