@@ -2,10 +2,8 @@
      Dette vinduet utgjør hovedskjermen i applikasjonen.  Her kan brukeren
      bygge gridet, velge en Excel‑fil, eksportere data til Nord/Durapart,
      nullstille skjulte celler, starte mapping av komponenter, utføre
-     automatiske målinger og toggles fjerning av celler.  Et horisontalt
-     ScrollViewer sørger for at alle kontrollknappene er tilgjengelige
-     selv om vinduet er smalt.  Under gridet vises en overlay når
-     interaktiv eller bulk mapping pågår med avbryt‑ og ferdigknapper.
+     automatiske målinger og toggles fjerning av celler.  Kompakte kontroller
+     er plassert i en meny på høyre side for bedre oversikt.
 -->
 
 <Window x:Class="WpfEGridApp.MainWindow"
@@ -24,6 +22,75 @@
         <SolidColorBrush x:Key="OrangeButtonBrush" Color="#FFF28C38"/>
         <SolidColorBrush x:Key="TextBrush" Color="#FFE6ECEC"/>
         <SolidColorBrush x:Key="PanelBackground" Color="#2A3B3C"/>
+
+        <!-- Compact button style for side menu -->
+        <Style TargetType="Button" x:Key="CompactButtonStyle">
+            <Setter Property="Background" Value="{StaticResource AccentBrush}"/>
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+            <Setter Property="FontWeight" Value="Medium"/>
+            <Setter Property="Padding" Value="8,4"/>
+            <Setter Property="Margin" Value="4"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Height" Value="32"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Effect">
+                <Setter.Value>
+                    <DropShadowEffect Color="Black" BlurRadius="6" ShadowDepth="2" Opacity="0.3"/>
+                </Setter.Value>
+            </Setter>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                CornerRadius="8"
+                                SnapsToDevicePixels="True">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#FF00A88F"/>
+                                <Trigger.EnterActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)"
+                                                             To="1.03" Duration="0:0:0.15"/>
+                                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)"
+                                                             To="1.03" Duration="0:0:0.15"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.EnterActions>
+                                <Trigger.ExitActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)"
+                                                             To="1.0" Duration="0:0:0.15"/>
+                                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)"
+                                                             To="1.0" Duration="0:0:0.15"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.ExitActions>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter Property="Background" Value="#FF008E7A"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Background" Value="#FF6B6B6B"/>
+                                <Setter Property="Foreground" Value="#FFAAAAAA"/>
+                                <Setter Property="Cursor" Value="Arrow"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Setter Property="RenderTransform">
+                <Setter.Value>
+                    <ScaleTransform ScaleX="1" ScaleY="1"/>
+                </Setter.Value>
+            </Setter>
+            <Setter Property="RenderTransformOrigin" Value="0.5,0.5"/>
+        </Style>
 
         <!-- Rounded button style for the majority of knapper -->
         <Style TargetType="Button" x:Key="RoundedButtonStyle">
@@ -107,6 +174,48 @@
             <Setter Property="FontWeight" Value="Bold"/>
         </Style>
 
+        <!-- Compact text box style -->
+        <Style TargetType="TextBox" x:Key="CompactTextBoxStyle">
+            <Setter Property="Padding" Value="6,4"/>
+            <Setter Property="Margin" Value="4"/>
+            <Setter Property="BorderBrush" Value="#FF4A5A5B"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Background" Value="#FF2A3B3C"/>
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Height" Value="28"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Effect">
+                <Setter.Value>
+                    <DropShadowEffect Color="Black" BlurRadius="3" ShadowDepth="1" Opacity="0.2"/>
+                </Setter.Value>
+            </Setter>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="6">
+                            <ScrollViewer x:Name="PART_ContentHost" Margin="0"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Background" Value="#FF3A4B4C"/>
+                                <Setter Property="Foreground" Value="#FFAAAAAA"/>
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter Property="BorderBrush" Value="{StaticResource PrimaryBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <!-- Style for text boxes -->
         <Style TargetType="TextBox">
             <Setter Property="Padding" Value="10,6"/>
@@ -151,6 +260,15 @@
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
+        </Style>
+
+        <!-- Compact label style -->
+        <Style TargetType="Label" x:Key="CompactLabelStyle">
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+            <Setter Property="FontWeight" Value="Medium"/>
+            <Setter Property="Margin" Value="4,2"/>
+            <Setter Property="FontSize" Value="11"/>
         </Style>
 
         <!-- Style for labels -->
@@ -218,187 +336,220 @@
 
     <Border Background="{StaticResource PanelBackground}" CornerRadius="16" Margin="20" Padding="20">
         <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="260"/>
+            </Grid.ColumnDefinitions>
+
             <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
-            <!-- Kontrollerad øverst -->
-            <ScrollViewer Grid.Row="0" Margin="0,0,0,20"
-                          HorizontalScrollBarVisibility="Auto"
-                          VerticalScrollBarVisibility="Disabled">
-                <Grid>
-                    <!-- Bruk mange kolonner slik at knapper kan legges fortløpende.  Den siste
-                         kolonnen brukes med stjerne (*) for å fylle resten av bredden og
-                         muliggjør at resultateksten strekker seg. -->
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="80"/>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="80"/>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="80"/>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
+            <!-- Hovedområde for grid -->
+            <Grid Grid.Column="0" Grid.Row="0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
 
-                    <Label Content="Sections:" Grid.Column="0"/>
-                    <TextBox x:Name="SectionBox" Text="{Binding Sections, UpdateSourceTrigger=PropertyChanged}"
-                             ToolTip="Enter number of sections (1-10)" Grid.Column="1"/>
+                <!-- Resultatmelding øverst -->
+                <TextBlock x:Name="ResultText" Style="{StaticResource ResultTextStyle}"
+                           Grid.Row="0" HorizontalAlignment="Left" Margin="15,0,0,10" FontSize="14"/>
 
-                    <Label Content="Rows:" Grid.Column="2"/>
-                    <TextBox x:Name="RowBox" Text="{Binding Rows, UpdateSourceTrigger=PropertyChanged}"
-                             ToolTip="Enter number of rows (1-20)" Grid.Column="3"/>
+                <!-- Gridvisning med overlay -->
+                <Grid Grid.Row="1">
+                    <!-- Scrollable area for the grid -->
+                    <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                        <Border Background="#FF2A3B3C" CornerRadius="10" Padding="10" Width="Auto" MinWidth="1323">
+                            <DockPanel>
+                                <!-- MainPanel holder alle seksjoner og celler -->
+                                <StackPanel x:Name="MainPanel" Orientation="Horizontal" HorizontalAlignment="Left"/>
+                            </DockPanel>
+                        </Border>
+                    </ScrollViewer>
 
-                    <Label Content="Columns:" Grid.Column="4"/>
-                    <TextBox x:Name="ColBox" Text="{Binding Cols, UpdateSourceTrigger=PropertyChanged}"
-                             ToolTip="Enter number of columns (1-10)" Grid.Column="5"/>
+                    <!-- Semi-transparent overlay under mapping -->
+                    <Border x:Name="MappingIndicator"
+                            Background="#80000000"
+                            CornerRadius="10"
+                            Visibility="Collapsed"
+                            IsHitTestVisible="False"
+                            Padding="8">
+                        <TextBlock x:Name="MappingIndicatorText"
+                                   Style="{StaticResource MappingIndicatorStyle}"
+                                   Text="Mapping:"/>
+                    </Border>
 
-                    <Button Content="Rebuild Grid" Click="Rebuild_Click" Width="110"
-                            Style="{StaticResource RoundedButtonStyle}"
-                            ToolTip="Rebuild the grid with specified dimensions" Grid.Column="6"/>
+                    <!-- Control buttons during sequential mapping mode -->
+                    <StackPanel x:Name="SequentialMappingControls"
+                                Orientation="Horizontal"
+                                HorizontalAlignment="Right"
+                                VerticalAlignment="Top"
+                                Margin="8"
+                                Visibility="Collapsed">
 
-                    <Button Content="Select Excel File" Click="SelectExcelFile_Click" Width="140"
-                            Style="{StaticResource RoundedButtonStyle}"
-                            ToolTip="Choose an Excel file to log measurements" Grid.Column="7"/>
-
-                    <Button Content="Refresh Excel" Click="RefreshExcel_Click" Width="110"
-                            Style="{StaticResource RoundedButtonStyle}"
-                            Background="#FF5588CC"
-                            ToolTip="Refresh Excel data and find next measurement row" Grid.Column="8"/>
-
-                    <Button Content="Delete Last" Click="DeleteLastMeasurement_Click" Width="110"
-                            Style="{StaticResource RoundedButtonStyle}"
-                            ToolTip="Remove the last measurement from the Excel file" Grid.Column="9"/>
-
-                    <!-- Eksport- og reset-knapper i en horisontal StackPanel -->
-                    <StackPanel Grid.Column="10" Orientation="Horizontal" HorizontalAlignment="Left">
-                        <Button x:Name="ExportNordButton" Content="Eksporter data til Nord"
-                                Click="ExportDataToNord_Click"
+                        <Button x:Name="UndoMappingButton"
+                                Content="Angre"
                                 Style="{StaticResource RoundedButtonStyle}"
-                                Margin="0,0,8,0"
-                                ToolTip="Kopier alle målinger fra kildefil (A) til Nord-eksportfil (B)"/>
-                        <Button x:Name="ExportDurapartButton" Content="Eksporter data til Durapart"
-                                Click="ExportDataToDurapart_Click"
+                                Background="#FFFF8800"
+                                Width="80"
+                                Height="34"
+                                Margin="4"
+                                Click="UndoMapping_Click"
+                                ToolTip="Angre forrige mapping"/>
+
+                        <Button x:Name="FinishMappingButton"
+                                Content="Ferdig"
                                 Style="{StaticResource RoundedButtonStyle}"
-                                Margin="0,0,8,0"
-                                ToolTip="Kopier alle målinger fra kildefil (A) til Durapart-eksportfil (B)"/>
-                        <Button x:Name="ResetRemovedCellsButton" Content="Reset fjernede celler"
-                                Click="ResetRemovedCells_Click"
-                                Style="{StaticResource RoundedButtonStyle}"
-                                Background="#FF6666AA"
-                                ToolTip="Gjør synlig alle celler som er skjult av 'Fjern celler'"/>
+                                Background="#FF33AA33"
+                                Width="80"
+                                Height="34"
+                                Margin="4"
+                                Click="FinishMapping_Click"
+                                ToolTip="Fullfør sekvensiell mapping"/>
                     </StackPanel>
 
-                    <Button Content="Component Mapping" Click="OpenComponentMapping_Click"
+                    <!-- Avbryt-knapp -->
+                    <Button x:Name="CancelMappingButton"
+                            Content="Avbryt"
                             Style="{StaticResource RoundedButtonStyle}"
-                            Background="#FFFF8C00"
-                            ToolTip="Set up component mappings for automatic measurements" Grid.Column="11" Width="160"/>
-
-                    <!-- Toggle cell removal mode -->
-                    <Button x:Name="RemoveCellsButton" Content="Fjern celler" Click="RemoveCellsButton_Click"
-                            Style="{StaticResource RoundedButtonStyle}"
-                            Background="#FFDD5555"
-                            ToolTip="Klikk for å fjerne vanlige celler fra gridet"
-                            Grid.Column="12" Width="130"/>
-
-                    <!-- Tekst som viser resultatmeldinger -->
-                    <TextBlock x:Name="ResultText" Style="{StaticResource ResultTextStyle}"
-                               Grid.Column="14" HorizontalAlignment="Right" Margin="0,0,15,0" FontSize="14"/>
-                </Grid>
-            </ScrollViewer>
-
-            <!-- Gridvisning med overlay -->
-            <Grid Grid.Row="1">
-                <!-- Scrollable area for the grid -->
-                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-                    <Border Background="#FF2A3B3C" CornerRadius="10" Padding="10" Width="Auto" MinWidth="1323">
-                        <DockPanel>
-                            <!-- MainPanel holder alle seksjoner og celler -->
-                            <StackPanel x:Name="MainPanel" Orientation="Horizontal" HorizontalAlignment="Left"/>
-                        </DockPanel>
-                    </Border>
-                </ScrollViewer>
-
-                <!-- Semi-transparent overlay under mapping.  Brukes både ved interaktiv
-                     mapping og bulk mapping.  Innholdet settes i MappingIndicatorText. -->
-                <Border x:Name="MappingIndicator"
-                        Background="#80000000"
-                        CornerRadius="10"
-                        Visibility="Collapsed"
-                        IsHitTestVisible="False"
-                        Padding="8">
-                    <TextBlock x:Name="MappingIndicatorText"
-                               Style="{StaticResource MappingIndicatorStyle}"
-                               Text="Mapping:"/>
-                </Border>
-
-                <!-- Control buttons during sequential mapping mode -->
-                <StackPanel x:Name="SequentialMappingControls"
-                            Orientation="Horizontal"
+                            Background="#FFFF4444"
+                            Width="100"
+                            Height="34"
+                            Margin="8"
+                            Visibility="Collapsed"
                             HorizontalAlignment="Right"
                             VerticalAlignment="Top"
+                            Click="CancelMapping_Click"/>
+
+                    <!-- Ferdig bulk mapping-knapp -->
+                    <Button x:Name="CompleteBulkMappingButton"
+                            Content="Ferdig bulk mapping"
+                            Style="{StaticResource RoundedButtonStyle}"
+                            Background="#FF339966"
+                            Width="170"
+                            Height="34"
                             Margin="8"
-                            Visibility="Collapsed">
-
-                    <Button x:Name="UndoMappingButton"
-                            Content="Angre"
-                            Style="{StaticResource RoundedButtonStyle}"
-                            Background="#FFFF8800"
-                            Width="80"
-                            Height="34"
-                            Margin="4"
-                            Click="UndoMapping_Click"
-                            ToolTip="Angre forrige mapping"/>
-
-                    <Button x:Name="FinishMappingButton"
-                            Content="Ferdig"
-                            Style="{StaticResource RoundedButtonStyle}"
-                            Background="#FF33AA33"
-                            Width="80"
-                            Height="34"
-                            Margin="4"
-                            Click="FinishMapping_Click"
-                            ToolTip="Fullfør sekvensiell mapping"/>
-                </StackPanel>
-
-                <!-- Avbryt-knapp som vises kun under interaktiv mapping (ikke sekvensiell) -->
-                <Button x:Name="CancelMappingButton"
-                        Content="Avbryt"
-                        Style="{StaticResource RoundedButtonStyle}"
-                        Background="#FFFF4444"
-                        Width="100"
-                        Height="34"
-                        Margin="8"
-                        Visibility="Collapsed"
-                        HorizontalAlignment="Right"
-                        VerticalAlignment="Top"
-                        Click="CancelMapping_Click"/>
-
-                <!-- Ferdig bulk mapping-knapp som vises bare i bulk mapping-modus -->
-                <Button x:Name="CompleteBulkMappingButton"
-                        Content="Ferdig bulk mapping"
-                        Style="{StaticResource RoundedButtonStyle}"
-                        Background="#FF339966"
-                        Width="170"
-                        Height="34"
-                        Margin="8"
-                        Visibility="Collapsed"
-                        HorizontalAlignment="Right"
-                        VerticalAlignment="Top"
-                        Click="CompleteBulkMappingButton_Click"/>
+                            Visibility="Collapsed"
+                            HorizontalAlignment="Right"
+                            VerticalAlignment="Top"
+                            Click="CompleteBulkMappingButton_Click"/>
+                </Grid>
             </Grid>
 
+            <!-- Kompakt kontrollpanel på høyre side -->
+            <Border Grid.Column="1" Grid.Row="0" Background="#FF1A2526" CornerRadius="12" 
+                    Padding="12" Margin="10,0,0,0">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <TextBlock Text="Kontroller" FontSize="16" FontWeight="Bold" 
+                                   Foreground="{StaticResource TextBrush}" Margin="0,0,0,12"/>
+
+                        <!-- Grid dimensjoner -->
+                        <Border Background="#FF2A3B3C" CornerRadius="8" Padding="10" Margin="0,0,0,8">
+                            <StackPanel>
+                                <TextBlock Text="Grid dimensjoner" FontSize="12" FontWeight="SemiBold" 
+                                           Foreground="{StaticResource AccentBrush}" Margin="0,0,0,6"/>
+
+                                <Label Content="Seksjoner:" Style="{StaticResource CompactLabelStyle}"/>
+                                <TextBox x:Name="SectionBox" Text="{Binding Sections, UpdateSourceTrigger=PropertyChanged}"
+                                         Style="{StaticResource CompactTextBoxStyle}"
+                                         ToolTip="Antall seksjoner (1-10)"/>
+
+                                <Label Content="Rader:" Style="{StaticResource CompactLabelStyle}"/>
+                                <TextBox x:Name="RowBox" Text="{Binding Rows, UpdateSourceTrigger=PropertyChanged}"
+                                         Style="{StaticResource CompactTextBoxStyle}"
+                                         ToolTip="Antall rader (1-20)"/>
+
+                                <Label Content="Kolonner:" Style="{StaticResource CompactLabelStyle}"/>
+                                <TextBox x:Name="ColBox" Text="{Binding Cols, UpdateSourceTrigger=PropertyChanged}"
+                                         Style="{StaticResource CompactTextBoxStyle}"
+                                         ToolTip="Antall kolonner (1-10)"/>
+
+                                <Button Content="Bygg grid på nytt" Click="Rebuild_Click"
+                                        Style="{StaticResource CompactButtonStyle}"
+                                        ToolTip="Bygg gridet på nytt med angitte dimensjoner"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Excel operasjoner -->
+                        <Border Background="#FF2A3B3C" CornerRadius="8" Padding="10" Margin="0,0,0,8">
+                            <StackPanel>
+                                <TextBlock Text="Excel" FontSize="12" FontWeight="SemiBold" 
+                                           Foreground="{StaticResource AccentBrush}" Margin="0,0,0,6"/>
+
+                                <Button Content="Velg Excel-fil" Click="SelectExcelFile_Click"
+                                        Style="{StaticResource CompactButtonStyle}"
+                                        ToolTip="Velg en Excel-fil for logging"/>
+
+                                <Button Content="Oppdater Excel" Click="RefreshExcel_Click"
+                                        Style="{StaticResource CompactButtonStyle}"
+                                        Background="#FF5588CC"
+                                        ToolTip="Oppdater Excel-data"/>
+
+                                <Button Content="Slett siste" Click="DeleteLastMeasurement_Click"
+                                        Style="{StaticResource CompactButtonStyle}"
+                                        ToolTip="Fjern siste måling"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Eksport -->
+                        <Border Background="#FF2A3B3C" CornerRadius="8" Padding="10" Margin="0,0,0,8">
+                            <StackPanel>
+                                <TextBlock Text="Eksport" FontSize="12" FontWeight="SemiBold" 
+                                           Foreground="{StaticResource AccentBrush}" Margin="0,0,0,6"/>
+
+                                <Button x:Name="ExportNordButton" Content="Eksporter til Nord"
+                                        Click="ExportDataToNord_Click"
+                                        Style="{StaticResource CompactButtonStyle}"
+                                        ToolTip="Kopier målinger til Nord-eksportfil"/>
+
+                                <Button x:Name="ExportDurapartButton" Content="Eksporter til Durapart"
+                                        Click="ExportDataToDurapart_Click"
+                                        Style="{StaticResource CompactButtonStyle}"
+                                        ToolTip="Kopier målinger til Durapart-eksportfil"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Mapping -->
+                        <Border Background="#FF2A3B3C" CornerRadius="8" Padding="10" Margin="0,0,0,8">
+                            <StackPanel>
+                                <TextBlock Text="Mapping" FontSize="12" FontWeight="SemiBold" 
+                                           Foreground="{StaticResource AccentBrush}" Margin="0,0,0,6"/>
+
+                                <Button Content="Component Mapping" Click="OpenComponentMapping_Click"
+                                        Style="{StaticResource CompactButtonStyle}"
+                                        Background="#FFFF8C00"
+                                        ToolTip="Åpne component mapping-vindu"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Celle-operasjoner -->
+                        <Border Background="#FF2A3B3C" CornerRadius="8" Padding="10" Margin="0,0,0,8">
+                            <StackPanel>
+                                <TextBlock Text="Celle-operasjoner" FontSize="12" FontWeight="SemiBold" 
+                                           Foreground="{StaticResource AccentBrush}" Margin="0,0,0,6"/>
+
+                                <Button x:Name="RemoveCellsButton" Content="Fjern celler" 
+                                        Click="RemoveCellsButton_Click"
+                                        Style="{StaticResource CompactButtonStyle}"
+                                        Background="#FFDD5555"
+                                        ToolTip="Klikk for å fjerne celler fra gridet"/>
+
+                                <Button x:Name="ResetRemovedCellsButton" Content="Reset fjernede celler"
+                                        Click="ResetRemovedCells_Click"
+                                        Style="{StaticResource CompactButtonStyle}"
+                                        Background="#FF6666AA"
+                                        ToolTip="Gjør synlig alle skjulte celler"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+
             <!-- Nedre seksjon viser filnavn og path til valgt Excel-fil -->
-            <Grid Grid.Row="2" Margin="0,20,0,0">
+            <Grid Grid.Column="0" Grid.ColumnSpan="2" Grid.Row="1" Margin="0,20,0,0">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
