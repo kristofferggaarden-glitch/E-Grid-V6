@@ -1874,12 +1874,15 @@ namespace WpfEGridApp
 
                             if (bulkA != null && mappingB != null)
                             {
+                                // Bulk START → Vanlig SLUTT
                                 var candidateA = GetCandidateCellsForBulkReference(bulkA, cellB, allCells);
                                 var posB = GetGridPositionFromMapping(mappingB);
 
                                 if (posB.HasValue)
                                 {
-                                    double connB = GetConnectionDistance(cellC, mappingB);
+                                    // Sjekk om mappingB er Motor eller Door (SLUTT-punkt)
+                                    bool bIsMotor = mappingB.GridRow == -1;
+                                    bool bIsDoor = mappingB.GridRow == -2;
 
                                     foreach (var posA in candidateA)
                                     {
@@ -1896,26 +1899,43 @@ namespace WpfEGridApp
                                         var path = PathFinder.FindShortestPath(startCell, endCell, allCells, _mainWindow.HasHorizontalNeighbor);
                                         if (path != null && path.Count > 0)
                                         {
-                                            // Standard pathfinding
-                                            double pathDist = 100; // Start cell
+                                            // Standard målelogikk
+                                            double pathDist = 100;
                                             for (int i = 1; i < path.Count - 1; i++)
                                                 pathDist += _mainWindow.HasHorizontalNeighbor(path[i].Row, path[i].Col) ? 100 : 50;
 
-                                            // Legg til connector for vanlig mapping + end cell
-                                            double total = pathDist + connB + 50;
-                                            maxDistance = Math.Max(maxDistance, total);
+                                            // SLUTT-punkt: Motor/Door har forskjellige verdier
+                                            if (bIsMotor)
+                                            {
+                                                pathDist += 500; // Motor som SLUTT-punkt
+                                                pathDist += 50;  // Special point buffer
+                                            }
+                                            else if (bIsDoor)
+                                            {
+                                                pathDist += 1000; // Door som SLUTT-punkt
+                                                pathDist += 50;   // Special point buffer
+                                            }
+                                            else
+                                            {
+                                                pathDist += 200; // Normal slutt-celle
+                                            }
+
+                                            maxDistance = Math.Max(maxDistance, pathDist);
                                         }
                                     }
                                 }
                             }
                             else if (mappingA != null && bulkB != null)
                             {
+                                // Vanlig START → Bulk SLUTT
                                 var posA = GetGridPositionFromMapping(mappingA);
                                 var candidateB = GetCandidateCellsForBulkReference(bulkB, cellC, allCells);
 
                                 if (posA.HasValue)
                                 {
-                                    double connA = GetConnectionDistance(cellB, mappingA);
+                                    // Sjekk om mappingA er Motor eller Door (START-punkt)
+                                    bool aIsMotor = mappingA.GridRow == -1;
+                                    bool aIsDoor = mappingA.GridRow == -2;
 
                                     foreach (var posB in candidateB)
                                     {
@@ -1932,14 +1952,24 @@ namespace WpfEGridApp
                                         var path = PathFinder.FindShortestPath(startCell, endCell, allCells, _mainWindow.HasHorizontalNeighbor);
                                         if (path != null && path.Count > 0)
                                         {
-                                            // Start med connector for vanlig mapping
-                                            double pathDist = connA + 100;
+                                            double pathDist = 100;
                                             for (int i = 1; i < path.Count - 1; i++)
                                                 pathDist += _mainWindow.HasHorizontalNeighbor(path[i].Row, path[i].Col) ? 100 : 50;
+                                            pathDist += 200; // Slutt-celle (bulk-siden)
 
-                                            // End cell for bulk (standard 200mm)
-                                            double total = pathDist + 200;
-                                            maxDistance = Math.Max(maxDistance, total);
+                                            // START-punkt: Motor/Door har forskjellige verdier
+                                            if (aIsMotor)
+                                            {
+                                                pathDist += 400; // Motor som START-punkt
+                                                pathDist += 50;  // Special point buffer
+                                            }
+                                            else if (aIsDoor)
+                                            {
+                                                pathDist += 900; // Door som START-punkt
+                                                pathDist += 50;  // Special point buffer
+                                            }
+
+                                            maxDistance = Math.Max(maxDistance, pathDist);
                                         }
                                     }
                                 }
@@ -2108,11 +2138,26 @@ namespace WpfEGridApp
             bool hasStar = !string.IsNullOrWhiteSpace(excelReference) && excelReference.Trim().EndsWith("*");
             bool selectedIsTop = bulkRange.SelectedIsTop;
 
-            // Logikk:
-            // INGEN stjerne: bruk den siden som ble mappet (T eller B)
-            // MED stjerne: bruk MOTSATT side (T→B eller B→T)
+            // VIKTIG LOGIKK:
+            // Hvis bulk mappet til T-celler (selectedIsTop=true):
+            //   - UTEN stjerne: Bruk B-siden (undersiden) 
+            //   - MED stjerne: Bruk T-siden (oversiden)
+            //
+            // Hvis bulk mappet til B-celler (selectedIsTop=false):
+            //   - UTEN stjerne: Bruk T-siden (oversiden)
+            //   - MED stjerne: Bruk B-siden (undersiden)
 
-            bool useSideIsTop = hasStar ? !selectedIsTop : selectedIsTop;
+            bool useSideIsTop;
+            if (selectedIsTop)
+            {
+                // Mappet til T-celler
+                useSideIsTop = hasStar; // Med stjerne: T-siden, uten stjerne: B-siden
+            }
+            else
+            {
+                // Mappet til B-celler
+                useSideIsTop = !hasStar; // Med stjerne: B-siden, uten stjerne: T-siden
+            }
 
             foreach (var cell in bulkRange.Cells)
             {
@@ -2121,57 +2166,63 @@ namespace WpfEGridApp
 
                 int actualCellRow;
 
-                // mappingRow kan være positiv (T-celle) eller negativ (B-celle)
+                // Finn vanlig celle basert på mappingRow og hvilken side vi skal bruke
                 if (mappingRow >= 0)
                 {
-                    // Dette er en T-mapping-celle
+                    // Positiv mappingRow = T-mapping-celle
                     if (useSideIsTop)
                     {
-                        // Bruk T-siden → vanlig celle OVER
+                        // Bruk T-siden → vanlig celle OVER mapping-cellen
                         actualCellRow = mappingRow - 1;
                     }
                     else
                     {
-                        // Bruk B-siden → vanlig celle UNDER
+                        // Bruk B-siden → vanlig celle UNDER mapping-cellen
                         actualCellRow = mappingRow + 1;
                     }
                 }
                 else
                 {
-                    // Dette er en B-mapping-celle (lagret som negativ)
+                    // Negativ mappingRow = B-mapping-celle
+                    // Konverter til positiv rad først
                     int posRow = -(mappingRow + 1);
+
                     if (useSideIsTop)
                     {
-                        // Bruk T-siden → vanlig celle OVER
+                        // Bruk T-siden → vanlig celle OVER mapping-cellen
                         actualCellRow = posRow - 1;
                     }
                     else
                     {
-                        // Bruk B-siden → vanlig celle UNDER
+                        // Bruk B-siden → vanlig celle UNDER mapping-cellen
                         actualCellRow = posRow + 1;
                     }
                 }
 
+                // Debug: sjekk om cellen finnes
                 if (allCells.ContainsKey((actualCellRow, col)))
                 {
                     result.Add((actualCellRow, col));
                 }
-            }
-
-            // Fallback hvis ingen celler funnet
-            if (result.Count == 0)
-            {
-                foreach (var cell in bulkRange.Cells)
+                else
                 {
-                    // Prøv både over og under mapping-cellen
-                    int mappingRow = cell.Row >= 0 ? cell.Row : Math.Abs(cell.Row + 1);
-
-                    if (allCells.ContainsKey((mappingRow - 1, cell.Col)))
-                        result.Add((mappingRow - 1, cell.Col));
-                    else if (allCells.ContainsKey((mappingRow + 1, cell.Col)))
-                        result.Add((mappingRow + 1, cell.Col));
-                    else if (allCells.ContainsKey((mappingRow, cell.Col)))
-                        result.Add((mappingRow, cell.Col));
+                    // Prøv alternativ hvis ikke funnet
+                    if (mappingRow >= 0)
+                    {
+                        // Prøv både over og under
+                        if (allCells.ContainsKey((mappingRow - 1, col)))
+                            result.Add((mappingRow - 1, col));
+                        else if (allCells.ContainsKey((mappingRow + 1, col)))
+                            result.Add((mappingRow + 1, col));
+                    }
+                    else
+                    {
+                        int posRow = -(mappingRow + 1);
+                        if (allCells.ContainsKey((posRow - 1, col)))
+                            result.Add((posRow - 1, col));
+                        else if (allCells.ContainsKey((posRow + 1, col)))
+                            result.Add((posRow + 1, col));
+                    }
                 }
             }
 
