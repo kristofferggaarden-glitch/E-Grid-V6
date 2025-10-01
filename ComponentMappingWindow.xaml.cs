@@ -300,14 +300,7 @@ namespace WpfEGridApp
 
             UpdateStatus($"Bulk mapping: velg grid-celler for {prefix}:{startNum}-{endNum}. Klikk 'Ferdig bulk mapping' når ferdig.");
 
-            MessageBox.Show(
-                $"Bulk mapping startet for {prefix}:{startNum}-{endNum}.\n\n" +
-                "1. Gå tilbake til hovedvinduet\n" +
-                "2. Klikk på T-celler ELLER B-celler (1 eller flere)\n" +
-                "3. Klikk 'Ferdig bulk mapping' i hovedvinduet\n\n" +
-                $"Dette vil mappe alle {endNum - startNum + 1} referanser til de valgte cellene.",
-                "Bulk Mapping", MessageBoxButton.OK, MessageBoxImage.Information);
-
+            // INGEN dialog - start bulk mapping direkte
             _mainWindow.StartBulkMappingSelection(prefix, startNum, endNum, OnBulkMappingCompleted);
             this.WindowState = WindowState.Minimized;
         }
@@ -332,8 +325,6 @@ namespace WpfEGridApp
                 {
                     if (cells == null || cells.Count == 0)
                     {
-                        MessageBox.Show("Ingen celler ble valgt. Bulk mapping avbrutt.", "Ingen valg",
-                                       MessageBoxButton.OK, MessageBoxImage.Warning);
                         FinishBulkMappingButton.Visibility = Visibility.Collapsed;
                         _isBulkMappingMode = false;
                         NewExcelReference.Clear();
@@ -345,35 +336,29 @@ namespace WpfEGridApp
 
                     bool selectedIsTop = _mainWindow.BulkMappingSelectedIsTop;
 
-                    // VIKTIG: Kall AddBulkRangeMapping med de valgte cellene
+                    // Lagre bulk mapping
                     _mappingManager.AddBulkRangeMapping(prefix, startNumber, endNumber, cells, selectedIsTop);
 
                     FinishBulkMappingButton.Visibility = Visibility.Collapsed;
                     _isBulkMappingMode = false;
                     NewExcelReference.Clear();
 
-                    // Reload mappings for å vise de nye
+                    // Reload mappings
                     LoadExistingMappings();
 
                     int totalReferences = (endNumber - startNumber + 1) * 2;
-                    string message = $"Bulk mapping fullført!\n\n" +
-                        $"Range: {prefix}:{startNumber}-{endNumber}\n" +
-                        $"Celler valgt: {cells.Count}\n" +
-                        $"Side: {(selectedIsTop ? "T (oversiden)" : "B (undersiden)")}\n\n" +
-                        $"Totalt {totalReferences} referanser mappet:\n" +
-                        $"- {endNumber - startNumber + 1} base referanser (eks: {prefix}:{startNumber})\n" +
-                        $"- {endNumber - startNumber + 1} stjerne referanser (eks: {prefix}:{startNumber}*)";
+                    string sideText = selectedIsTop ? "T (oversiden)" : "B (undersiden)";
 
-                    MessageBox.Show(message, "Bulk Mapping Fullført", MessageBoxButton.OK, MessageBoxImage.Information);
-
+                    // Åpne vinduet igjen og sett fokus på tekstboks - INGEN DIALOG
                     this.WindowState = WindowState.Normal;
                     this.Activate();
-                    UpdateStatus($"Bulk mapping lagret: {prefix}:{startNumber}-{endNumber} ({cells.Count} celler, {totalReferences} ref)");
+                    NewExcelReference.Focus();
+
+                    UpdateStatus($"Bulk mapping lagret: {prefix}:{startNumber}-{endNumber} → {cells.Count} celler på {sideText} ({totalReferences} referanser)");
                 }
                 catch (Exception ex)
                 {
                     UpdateStatus($"Feil under lagring av bulk mapping: {ex.Message}");
-                    MessageBox.Show($"Feil under lagring av bulk mapping: {ex.Message}", "Feil", MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             });
         }

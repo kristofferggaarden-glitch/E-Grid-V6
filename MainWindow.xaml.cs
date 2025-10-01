@@ -476,8 +476,6 @@ namespace WpfEGridApp
 
             int column = mappingEntry.Key.Item2;
 
-            System.Diagnostics.Debug.WriteLine($"Bulk click: Row={actualRow}, Col={column}, IsTop={clickedIsTop}");
-
             bool alreadySelected = _bulkSelectedCells != null && _bulkSelectedCells.Any(c => c.Row == actualRow && c.Col == column);
 
             if (alreadySelected)
@@ -496,8 +494,6 @@ namespace WpfEGridApp
 
             int count = _bulkSelectedCells?.Count ?? 0;
             ResultText.Text = $"Bulk mapping: {count} celler valgt ({(clickedIsTop ? "T" : "B")} side). Klikk 'Ferdig bulk mapping' når ferdig.";
-
-            System.Diagnostics.Debug.WriteLine($"Total cells selected: {count}");
         }
 
         public void StartBulkMappingSelection(string prefix, int startNumber, int endNumber,
@@ -555,11 +551,10 @@ namespace WpfEGridApp
             }
 
             int cellCount = _bulkSelectedCells?.Count ?? 0;
-            System.Diagnostics.Debug.WriteLine($"FinishBulkMappingSelection called. Cells: {cellCount}");
 
             if (_bulkSelectedCells == null || _bulkSelectedCells.Count == 0)
             {
-                MessageBox.Show($"Ingen celler ble valgt.\n\nKlikk på T eller B celler før du fullfører bulk mapping.\n\nDebug: Liste er {(_bulkSelectedCells == null ? "null" : "tom")}",
+                MessageBox.Show("Ingen celler ble valgt.\n\nKlikk på T eller B celler før du fullfører bulk mapping.",
                                "Ingen celler valgt", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
@@ -568,14 +563,7 @@ namespace WpfEGridApp
             var startNumber = _bulkMappingStart;
             var endNumber = _bulkMappingEnd;
             var selectedCells = new List<(int Row, int Col)>(_bulkSelectedCells);
-            var selectedIsTop = BulkMappingSelectedIsTop;
             var callback = _bulkMappingCompletedCallback;
-
-            System.Diagnostics.Debug.WriteLine($"Calling callback with {selectedCells.Count} cells");
-            foreach (var cell in selectedCells)
-            {
-                System.Diagnostics.Debug.WriteLine($"  Cell: Row={cell.Row}, Col={cell.Col}");
-            }
 
             EndBulkMappingMode();
 
@@ -584,18 +572,12 @@ namespace WpfEGridApp
                 try
                 {
                     callback.Invoke(prefix, startNumber, endNumber, selectedCells);
-                    MessageBox.Show($"Bulk mapping fullført!\n\nRange: {prefix}:{startNumber}-{endNumber}\nCeller: {selectedCells.Count}\nSide: {(selectedIsTop ? "T" : "B")}",
-                                   "Suksess", MessageBoxButton.OK, MessageBoxImage.Information);
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show($"Feil ved lagring av bulk mapping:\n\n{ex.Message}\n\nStack:\n{ex.StackTrace}",
+                    MessageBox.Show($"Feil ved lagring av bulk mapping:\n\n{ex.Message}",
                                    "Feil", MessageBoxButton.OK, MessageBoxImage.Error);
                 }
-            }
-            else
-            {
-                MessageBox.Show("Callback er null!", "Feil", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -667,7 +649,6 @@ namespace WpfEGridApp
 
         private void CompleteBulkMappingButton_Click(object sender, RoutedEventArgs e)
         {
-            System.Diagnostics.Debug.WriteLine("CompleteBulkMappingButton_Click called");
             FinishBulkMappingSelection();
         }
 
@@ -1792,7 +1773,6 @@ namespace WpfEGridApp
             return result;
         }
     }
-    // ExcelConnectionProcessor - legg til ETTER PriorityQueue klassen i MainWindow.xaml.cs
 
     public class ExcelConnectionProcessor
     {
@@ -1850,8 +1830,6 @@ namespace WpfEGridApp
                             var candidateA = GetCandidateCellsForBulkReference(bulkA, cellB, allCells);
                             var candidateB = GetCandidateCellsForBulkReference(bulkB, cellC, allCells);
 
-                            double connA = GetConnectionDistance(cellB, mappingA);
-                            double connB = GetConnectionDistance(cellC, mappingB);
                             double maxDistance = 0;
 
                             foreach (var posA in candidateA)
@@ -1872,12 +1850,13 @@ namespace WpfEGridApp
                                     if (path == null || path.Count == 0)
                                         continue;
 
-                                    double pathDist = 0;
+                                    // Standard pathfinding som vanlige celler
+                                    double pathDist = 100; // Start cell
                                     for (int i = 1; i < path.Count - 1; i++)
                                         pathDist += _mainWindow.HasHorizontalNeighbor(path[i].Row, path[i].Col) ? 100 : 50;
+                                    pathDist += 200; // End cell
 
-                                    double total = pathDist + connA + connB + 50;
-                                    maxDistance = Math.Max(maxDistance, total);
+                                    maxDistance = Math.Max(maxDistance, pathDist);
                                 }
                             }
 
@@ -1900,7 +1879,6 @@ namespace WpfEGridApp
 
                                 if (posB.HasValue)
                                 {
-                                    double connA = GetConnectionDistance(cellB, null);
                                     double connB = GetConnectionDistance(cellC, mappingB);
 
                                     foreach (var posA in candidateA)
@@ -1918,11 +1896,13 @@ namespace WpfEGridApp
                                         var path = PathFinder.FindShortestPath(startCell, endCell, allCells, _mainWindow.HasHorizontalNeighbor);
                                         if (path != null && path.Count > 0)
                                         {
-                                            double pathDist = 0;
+                                            // Standard pathfinding
+                                            double pathDist = 100; // Start cell
                                             for (int i = 1; i < path.Count - 1; i++)
                                                 pathDist += _mainWindow.HasHorizontalNeighbor(path[i].Row, path[i].Col) ? 100 : 50;
 
-                                            double total = pathDist + connA + connB + 50;
+                                            // Legg til connector for vanlig mapping + end cell
+                                            double total = pathDist + connB + 50;
                                             maxDistance = Math.Max(maxDistance, total);
                                         }
                                     }
@@ -1936,7 +1916,6 @@ namespace WpfEGridApp
                                 if (posA.HasValue)
                                 {
                                     double connA = GetConnectionDistance(cellB, mappingA);
-                                    double connB = GetConnectionDistance(cellC, null);
 
                                     foreach (var posB in candidateB)
                                     {
@@ -1953,11 +1932,13 @@ namespace WpfEGridApp
                                         var path = PathFinder.FindShortestPath(startCell, endCell, allCells, _mainWindow.HasHorizontalNeighbor);
                                         if (path != null && path.Count > 0)
                                         {
-                                            double pathDist = 0;
+                                            // Start med connector for vanlig mapping
+                                            double pathDist = connA + 100;
                                             for (int i = 1; i < path.Count - 1; i++)
                                                 pathDist += _mainWindow.HasHorizontalNeighbor(path[i].Row, path[i].Col) ? 100 : 50;
 
-                                            double total = pathDist + connA + connB + 50;
+                                            // End cell for bulk (standard 200mm)
+                                            double total = pathDist + 200;
                                             maxDistance = Math.Max(maxDistance, total);
                                         }
                                     }
@@ -2127,36 +2108,70 @@ namespace WpfEGridApp
             bool hasStar = !string.IsNullOrWhiteSpace(excelReference) && excelReference.Trim().EndsWith("*");
             bool selectedIsTop = bulkRange.SelectedIsTop;
 
+            // Logikk:
+            // INGEN stjerne: bruk den siden som ble mappet (T eller B)
+            // MED stjerne: bruk MOTSATT side (T→B eller B→T)
+
+            bool useSideIsTop = hasStar ? !selectedIsTop : selectedIsTop;
+
             foreach (var cell in bulkRange.Cells)
             {
-                int row = cell.Row;
+                int mappingRow = cell.Row;
                 int col = cell.Col;
 
-                if (hasStar)
+                int actualCellRow;
+
+                // mappingRow kan være positiv (T-celle) eller negativ (B-celle)
+                if (mappingRow >= 0)
                 {
-                    int oppositeRow = selectedIsTop ? row + 1 : row - 1;
-                    if (allCells.ContainsKey((oppositeRow, col)))
+                    // Dette er en T-mapping-celle
+                    if (useSideIsTop)
                     {
-                        result.Add((oppositeRow, col));
+                        // Bruk T-siden → vanlig celle OVER
+                        actualCellRow = mappingRow - 1;
+                    }
+                    else
+                    {
+                        // Bruk B-siden → vanlig celle UNDER
+                        actualCellRow = mappingRow + 1;
                     }
                 }
                 else
                 {
-                    if (allCells.ContainsKey((row, col)))
+                    // Dette er en B-mapping-celle (lagret som negativ)
+                    int posRow = -(mappingRow + 1);
+                    if (useSideIsTop)
                     {
-                        result.Add((row, col));
+                        // Bruk T-siden → vanlig celle OVER
+                        actualCellRow = posRow - 1;
                     }
+                    else
+                    {
+                        // Bruk B-siden → vanlig celle UNDER
+                        actualCellRow = posRow + 1;
+                    }
+                }
+
+                if (allCells.ContainsKey((actualCellRow, col)))
+                {
+                    result.Add((actualCellRow, col));
                 }
             }
 
+            // Fallback hvis ingen celler funnet
             if (result.Count == 0)
             {
                 foreach (var cell in bulkRange.Cells)
                 {
-                    if (allCells.ContainsKey((cell.Row, cell.Col)))
-                    {
-                        result.Add((cell.Row, cell.Col));
-                    }
+                    // Prøv både over og under mapping-cellen
+                    int mappingRow = cell.Row >= 0 ? cell.Row : Math.Abs(cell.Row + 1);
+
+                    if (allCells.ContainsKey((mappingRow - 1, cell.Col)))
+                        result.Add((mappingRow - 1, cell.Col));
+                    else if (allCells.ContainsKey((mappingRow + 1, cell.Col)))
+                        result.Add((mappingRow + 1, cell.Col));
+                    else if (allCells.ContainsKey((mappingRow, cell.Col)))
+                        result.Add((mappingRow, cell.Col));
                 }
             }
 

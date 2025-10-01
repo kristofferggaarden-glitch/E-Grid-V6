@@ -174,23 +174,17 @@ namespace WpfEGridApp
             public bool SelectedIsTop { get; set; }
         }
 
-        /// <summary>
-        /// FIKSET: Legger til bulk range mapping og oppretter automatisk individuelle mappings
-        /// for hver referanse (base og starred) til ALLE valgte celler.
-        /// </summary>
         public void AddBulkRangeMapping(string prefix, int startIndex, int endIndex, List<(int Row, int Col)> selectedCells, bool selectedIsTop)
         {
             if (string.IsNullOrWhiteSpace(prefix)) throw new ArgumentException(nameof(prefix));
             if (endIndex < startIndex) throw new ArgumentException("endIndex < startIndex");
             if (selectedCells == null || selectedCells.Count == 0) throw new ArgumentException("selectedCells");
 
-            // Fjern eksisterende bulk mapping for samme range
             _bulkRangeMappings.RemoveAll(b =>
                 b.Prefix.Equals(prefix, StringComparison.OrdinalIgnoreCase) &&
                 b.StartIndex == startIndex &&
                 b.EndIndex == endIndex);
 
-            // Opprett bulk range mapping
             var bulk = new BulkRangeMapping
             {
                 Prefix = prefix,
@@ -205,36 +199,47 @@ namespace WpfEGridApp
 
             _bulkRangeMappings.Add(bulk);
 
-            // VIKTIG: Opprett individuelle mappings for hver referanse i bulk range
-            // Dette gjør at GetMapping() kan finne dem!
+            // Opprett individuelle mappings for GetMapping() å finne
             for (int i = startIndex; i <= endIndex; i++)
             {
                 string baseReference = $"{prefix}:{i}";
                 string starReference = $"{prefix}:{i}*";
 
-                // Map base reference til alle valgte celler
-                // Vi bruker første celle som "hovedmapping", men lagrer alle i bulk
                 var firstCell = selectedCells.First();
 
-                // Base reference (uten stjerne) mappes til valgt side
+                // Base reference (uten stjerne)
+                // Hvis selectedIsTop=true (T-celler): DefaultToBottom=false (mapper til T)
+                // Hvis selectedIsTop=false (B-celler): DefaultToBottom=true (mapper til B)
                 _mappings[baseReference] = new ComponentMapping
                 {
                     ExcelReference = baseReference,
                     GridRow = firstCell.Row,
                     GridColumn = firstCell.Col,
-                    DefaultToBottom = !selectedIsTop // If T selected, DefaultToBottom=false
+                    DefaultToBottom = !selectedIsTop
                 };
 
-                // Starred reference mappes til motsatt side
-                // Hvis selectedIsTop (T-celler), så mappes starred til B-siden (row+1)
-                int oppositeRow = selectedIsTop ? firstCell.Row + 1 : firstCell.Row - 1;
+                // Starred reference (med stjerne) - mapper til MOTSATT side
+                // Hvis selectedIsTop=true (T-celler): starred mapper til B (row+1)
+                // Hvis selectedIsTop=false (B-celler): starred mapper til T (row-1)
+                int oppositeRow;
+                if (selectedIsTop)
+                {
+                    // T-celler valgt -> starred mapper til B (under)
+                    oppositeRow = firstCell.Row >= 0 ? firstCell.Row + 1 : firstCell.Row - 1;
+                }
+                else
+                {
+                    // B-celler valgt -> starred mapper til T (over)
+                    int posRow = firstCell.Row >= 0 ? firstCell.Row : Math.Abs(firstCell.Row + 1);
+                    oppositeRow = posRow - 1;
+                }
 
                 _mappings[starReference] = new ComponentMapping
                 {
                     ExcelReference = starReference,
                     GridRow = oppositeRow,
                     GridColumn = firstCell.Col,
-                    DefaultToBottom = selectedIsTop // Opposite of base
+                    DefaultToBottom = selectedIsTop
                 };
             }
 
@@ -249,7 +254,6 @@ namespace WpfEGridApp
                 b.StartIndex == startIndex &&
                 b.EndIndex == endIndex);
 
-            // Fjern også alle individuelle mappings for dette bulk range
             for (int i = startIndex; i <= endIndex; i++)
             {
                 string baseRef = $"{prefix}:{i}";
@@ -268,7 +272,6 @@ namespace WpfEGridApp
         {
             var allMappings = new List<ComponentMapping>();
 
-            // Legg til vanlige mappings, men filtrer bort de som tilhører bulk ranges
             var bulkReferences = new HashSet<string>();
             foreach (var bulk in _bulkRangeMappings)
             {
@@ -287,7 +290,6 @@ namespace WpfEGridApp
                 }
             }
 
-            // Legg til bulk ranges som egne display items
             foreach (var bulk in _bulkRangeMappings)
             {
                 var displayMapping = new ComponentMapping
@@ -362,7 +364,6 @@ namespace WpfEGridApp
         {
             var cleanRef = excelReference.Trim();
 
-            // Sjekk om dette er en bulk range referanse (format: X2:21-100)
             if (cleanRef.Contains("-"))
             {
                 var parts = cleanRef.Split(':');
