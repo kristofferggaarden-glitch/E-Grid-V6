@@ -56,6 +56,8 @@ namespace WpfEGridApp
                 string position;
                 if (mapping.GridRow == -99)
                 {
+                    // Bulk mapping
+                    string rangeText = mapping.ExcelReference;
                     position = $"BULK: {mapping.GridColumn} celler";
                     if (mapping.DefaultToBottom) position += " (B)";
                     else position += " (T)";
@@ -264,18 +266,22 @@ namespace WpfEGridApp
                 return;
             }
 
-            var rangeRegex = new Regex(@"^([A-Za-z]+\d+):(\d+)(?:-(\d+))?$");
+            // Støtte for både:
+            // 1. Standard format: X2:21-100
+            // 2. Felt-prefiks format: J01-X2:21-100
+            var rangeRegex = new Regex(@"^(?:([A-Z]\d+)-)?([A-Za-z]+\d+):(\d+)(?:-(\d+))?$");
             var match = rangeRegex.Match(text);
             if (!match.Success)
             {
-                MessageBox.Show("Ugyldig format. Bruk f.eks. X2:21-100 eller X2:21", "Feil format",
+                MessageBox.Show("Ugyldig format. Bruk f.eks:\n- X2:21-100\n- J01-X2:21-100", "Feil format",
                                 MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
-            var prefix = match.Groups[1].Value;
-            var startStr = match.Groups[2].Value;
-            var endStr = match.Groups[3].Success ? match.Groups[3].Value : null;
+            var feltPrefix = match.Groups[1].Success ? match.Groups[1].Value : "";
+            var prefix = match.Groups[2].Value;
+            var startStr = match.Groups[3].Value;
+            var endStr = match.Groups[4].Success ? match.Groups[4].Value : null;
 
             if (!int.TryParse(startStr, out var startNum))
             {
@@ -293,15 +299,17 @@ namespace WpfEGridApp
             }
 
             _isBulkMappingMode = true;
-            _bulkPrefix = prefix;
+            _bulkPrefix = string.IsNullOrEmpty(feltPrefix) ? prefix : $"{feltPrefix}-{prefix}";
             _bulkStart = startNum;
             _bulkEnd = endNum;
             FinishBulkMappingButton.Visibility = Visibility.Visible;
 
-            UpdateStatus($"Bulk mapping: velg grid-celler for {prefix}:{startNum}-{endNum}. Klikk 'Ferdig bulk mapping' når ferdig.");
+            string displayText = string.IsNullOrEmpty(feltPrefix)
+                ? $"{prefix}:{startNum}-{endNum}"
+                : $"{feltPrefix}-{prefix}:{startNum}-{endNum}";
+            UpdateStatus($"Bulk mapping: velg grid-celler for {displayText}. Klikk 'Ferdig bulk mapping' når ferdig.");
 
-            // INGEN dialog - start bulk mapping direkte
-            _mainWindow.StartBulkMappingSelection(prefix, startNum, endNum, OnBulkMappingCompleted);
+            _mainWindow.StartBulkMappingSelection(_bulkPrefix, startNum, endNum, OnBulkMappingCompleted);
             this.WindowState = WindowState.Minimized;
         }
 
@@ -349,12 +357,17 @@ namespace WpfEGridApp
                     int totalReferences = (endNumber - startNumber + 1) * 2;
                     string sideText = selectedIsTop ? "T (oversiden)" : "B (undersiden)";
 
+                    // Vis riktig format i statusmelding
+                    string displayRange = prefix.Contains("-")
+                        ? $"{prefix}:{startNumber}-{endNumber}"  // Felt-prefiks format
+                        : $"{prefix}:{startNumber}-{endNumber}"; // Standard format
+
                     // Åpne vinduet igjen og sett fokus på tekstboks - INGEN DIALOG
                     this.WindowState = WindowState.Normal;
                     this.Activate();
                     NewExcelReference.Focus();
 
-                    UpdateStatus($"Bulk mapping lagret: {prefix}:{startNumber}-{endNumber} → {cells.Count} celler på {sideText} ({totalReferences} referanser)");
+                    UpdateStatus($"Bulk mapping lagret: {displayRange} → {cells.Count} celler på {sideText} ({totalReferences} referanser)");
                 }
                 catch (Exception ex)
                 {
@@ -484,28 +497,38 @@ namespace WpfEGridApp
             if (string.IsNullOrWhiteSpace(cellValue)) return;
 
             var allMatches = new List<string>();
-            var prefixMatches = Regex.Matches(cellValue, @"([A-Z]\d+-[A-Z]\d+)");
+
+            // Match vanlig prefix format: A1-B2 (ikke felt-prefiks format)
+            var prefixMatches = Regex.Matches(cellValue, @"([A-Z]\d+-[A-Z]\d+)(?![:\d])");
             foreach (Match match in prefixMatches)
                 allMatches.Add(match.Groups[1].Value);
 
             if (allMatches.Count == 0)
             {
-                var terminalMatches = Regex.Matches(cellValue, @"[A-Z]\d+:\d+");
-                foreach (Match match in terminalMatches)
+                // Match felt-prefiks base: J01-X2: (uten tall etter kolon)
+                var feltBaseMatches = Regex.Matches(cellValue, @"([A-Z]\d+-[A-Z]\d+):(?=\d)");
+                foreach (Match match in feltBaseMatches)
                 {
-                    var fullRef = match.Value;
-                    var baseRef = fullRef.Substring(0, fullRef.IndexOf(':') + 1);
-                    allMatches.Add(baseRef);
+                    var baseRef = match.Groups[1].Value + ":";
+                    if (!allMatches.Contains(baseRef))
+                        allMatches.Add(baseRef);
                 }
 
-                var simpleMatches = Regex.Matches(cellValue, @"[A-Z]\d+(?!:)");
+                // Match terminal format base: X2: (uten tall etter kolon)
+                var terminalMatches = Regex.Matches(cellValue, @"([A-Z]\d+):(?=\d)");
+                foreach (Match match in terminalMatches)
+                {
+                    var baseRef = match.Groups[1].Value + ":";
+                    if (!allMatches.Contains(baseRef))
+                        allMatches.Add(baseRef);
+                }
+
+                // Match enkle referanser: F1, X2, etc.
+                var simpleMatches = Regex.Matches(cellValue, @"[A-Z]\d+(?![:\d-])");
                 foreach (Match match in simpleMatches)
                 {
-                    var startPos = match.Index;
-                    var endPos = startPos + match.Length;
-                    if (endPos < cellValue.Length && cellValue[endPos] == ':')
-                        continue;
-                    allMatches.Add(match.Value);
+                    if (!allMatches.Contains(match.Value))
+                        allMatches.Add(match.Value);
                 }
             }
 
@@ -541,7 +564,30 @@ namespace WpfEGridApp
 
                 if (result == MessageBoxResult.Yes)
                 {
-                    _mappingManager.RemoveMapping(excelReference);
+                    // Sjekk om dette er en bulk mapping (inneholder både : og -)
+                    if (excelReference.Contains(":") && excelReference.Contains("-"))
+                    {
+                        // Dette kan være bulk range format
+                        var lastColonIndex = excelReference.LastIndexOf(':');
+                        var textAfterColon = excelReference.Substring(lastColonIndex + 1);
+
+                        if (textAfterColon.Contains("-"))
+                        {
+                            // Dette er bulk range: J01-X2:21-100 eller X2:21-100
+                            _mappingManager.RemoveMapping(excelReference);
+                        }
+                        else
+                        {
+                            // Dette er vanlig mapping med felt-prefiks: J01-X2:21
+                            _mappingManager.RemoveMapping(excelReference);
+                        }
+                    }
+                    else
+                    {
+                        // Vanlig mapping
+                        _mappingManager.RemoveMapping(excelReference);
+                    }
+
                     LoadExistingMappings();
                     UpdateStatus($"Slettet mapping for {excelReference}");
                 }
