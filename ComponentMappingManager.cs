@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using System.Windows;
 
 namespace WpfEGridApp
@@ -68,7 +67,6 @@ namespace WpfEGridApp
 
             var cleanRef = excelReference.Trim();
 
-            // Direkte match
             if (_mappings.TryGetValue(cleanRef, out var mapping))
             {
                 return new ComponentMapping
@@ -80,7 +78,6 @@ namespace WpfEGridApp
                 };
             }
 
-            // Søk etter beste match
             ComponentMapping bestMatch = null;
             int bestMatchLength = 0;
 
@@ -89,19 +86,6 @@ namespace WpfEGridApp
                 var mappingKey = kvp.Key;
                 var mappingValue = kvp.Value;
 
-                // Exact match med felt-prefiks: J01-X2:21 matcher "J01-X2:21"
-                if (mappingKey.Equals(cleanRef, StringComparison.OrdinalIgnoreCase))
-                {
-                    return new ComponentMapping
-                    {
-                        ExcelReference = mappingValue.ExcelReference,
-                        GridRow = mappingValue.GridRow,
-                        GridColumn = mappingValue.GridColumn,
-                        DefaultToBottom = mappingValue.DefaultToBottom
-                    };
-                }
-
-                // Prefix match: "X2:" matcher "X2:21"
                 if (mappingKey.EndsWith(":") && cleanRef.StartsWith(mappingKey, StringComparison.OrdinalIgnoreCase))
                 {
                     if (mappingKey.Length > bestMatchLength)
@@ -116,7 +100,6 @@ namespace WpfEGridApp
                         bestMatchLength = mappingKey.Length;
                     }
                 }
-                // Contains match
                 else if (cleanRef.Contains(mappingKey, StringComparison.OrdinalIgnoreCase))
                 {
                     if (mappingKey.Length > bestMatchLength)
@@ -129,29 +112,6 @@ namespace WpfEGridApp
                             DefaultToBottom = mappingValue.DefaultToBottom
                         };
                         bestMatchLength = mappingKey.Length;
-                    }
-                }
-                // Felt-prefiks partial match: "J01-X2:21" i mapping matcher "X2:21" i Excel
-                else if (mappingKey.Contains("-") && mappingKey.Contains(":"))
-                {
-                    var parts = mappingKey.Split('-');
-                    if (parts.Length >= 2)
-                    {
-                        var withoutFelt = string.Join("-", parts.Skip(1));
-                        if (cleanRef.Contains(withoutFelt, StringComparison.OrdinalIgnoreCase))
-                        {
-                            if (mappingKey.Length > bestMatchLength)
-                            {
-                                bestMatch = new ComponentMapping
-                                {
-                                    ExcelReference = mappingValue.ExcelReference,
-                                    GridRow = mappingValue.GridRow,
-                                    GridColumn = mappingValue.GridColumn,
-                                    DefaultToBottom = mappingValue.DefaultToBottom
-                                };
-                                bestMatchLength = mappingKey.Length;
-                            }
-                        }
                     }
                 }
             }
@@ -239,7 +199,6 @@ namespace WpfEGridApp
 
             _bulkRangeMappings.Add(bulk);
 
-            // Opprett individuelle mappings for GetMapping() å finne
             for (int i = startIndex; i <= endIndex; i++)
             {
                 string baseReference = $"{prefix}:{i}";
@@ -247,9 +206,6 @@ namespace WpfEGridApp
 
                 var firstCell = selectedCells.First();
 
-                // Base reference (uten stjerne)
-                // Hvis selectedIsTop=true (T-celler): DefaultToBottom=false (mapper til T)
-                // Hvis selectedIsTop=false (B-celler): DefaultToBottom=true (mapper til B)
                 _mappings[baseReference] = new ComponentMapping
                 {
                     ExcelReference = baseReference,
@@ -258,21 +214,7 @@ namespace WpfEGridApp
                     DefaultToBottom = !selectedIsTop
                 };
 
-                // Starred reference (med stjerne) - mapper til MOTSATT side
-                // Hvis selectedIsTop=true (T-celler): starred mapper til B (row+1)
-                // Hvis selectedIsTop=false (B-celler): starred mapper til T (row-1)
-                int oppositeRow;
-                if (selectedIsTop)
-                {
-                    // T-celler valgt -> starred mapper til B (under)
-                    oppositeRow = firstCell.Row >= 0 ? firstCell.Row + 1 : firstCell.Row - 1;
-                }
-                else
-                {
-                    // B-celler valgt -> starred mapper til T (over)
-                    int posRow = firstCell.Row >= 0 ? firstCell.Row : Math.Abs(firstCell.Row + 1);
-                    oppositeRow = posRow - 1;
-                }
+                int oppositeRow = selectedIsTop ? firstCell.Row + 1 : firstCell.Row - 1;
 
                 _mappings[starReference] = new ComponentMapping
                 {
@@ -349,38 +291,11 @@ namespace WpfEGridApp
         {
             if (string.IsNullOrWhiteSpace(excelReference)) return null;
             var cleaned = excelReference.Trim().TrimEnd('*');
-
-            // Støtte for både:
-            // 1. Standard format: X2:21
-            // 2. Felt-prefiks format: J01-X2:21
-
-            string prefix;
-            int index;
-
-            // Sjekk om det er felt-prefiks format (J01-X2:21)
-            if (cleaned.Contains("-") && cleaned.Contains(":"))
-            {
-                var parts = cleaned.Split(new[] { '-', ':' }, StringSplitOptions.RemoveEmptyEntries);
-                if (parts.Length >= 3)
-                {
-                    // Format: J01-X2:21 → prefix = "J01-X2", index = 21
-                    prefix = string.Join("-", parts.Take(parts.Length - 1));
-                    if (!int.TryParse(parts.Last(), out index)) return null;
-                }
-                else
-                {
-                    return null;
-                }
-            }
-            else
-            {
-                // Standard format: X2:21
-                var parts = cleaned.Split(':');
-                if (parts.Length != 2) return null;
-                prefix = parts[0];
-                if (!int.TryParse(parts[1], out index)) return null;
-            }
-
+            var parts = cleaned.Split(':');
+            if (parts.Length != 2) return null;
+            var prefix = parts[0];
+            var numPart = parts[1];
+            if (!int.TryParse(numPart, out var index)) return null;
             return _bulkRangeMappings.FirstOrDefault(b =>
                 b.Prefix.Equals(prefix, StringComparison.OrdinalIgnoreCase) &&
                 index >= b.StartIndex && index <= b.EndIndex);
@@ -431,58 +346,23 @@ namespace WpfEGridApp
         {
             var cleanRef = excelReference.Trim();
 
-            // Sjekk om dette er en bulk range referanse
-            // Format kan være: X2:21-100 eller J01-X2:21-100
             if (cleanRef.Contains("-"))
             {
-                // Prøv å parse som bulk range
-                var regex = new Regex(@"^(?:[A-Z]\d+-)?([A-Za-z]+\d+):(\d+)-(\d+)$");
-                var match = regex.Match(cleanRef);
-
-                if (match.Success)
+                var parts = cleanRef.Split(':');
+                if (parts.Length == 2)
                 {
-                    // Dette er en bulk range
-                    var withoutRange = cleanRef.Substring(0, cleanRef.LastIndexOf('-'));
-                    var lastDashIndex = withoutRange.LastIndexOf('-');
-
-                    string prefix;
-                    int start, end;
-
-                    if (lastDashIndex > 0 && cleanRef.Contains(":"))
+                    var prefix = parts[0];
+                    var rangeParts = parts[1].Split('-');
+                    if (rangeParts.Length == 2 &&
+                        int.TryParse(rangeParts[0], out var start) &&
+                        int.TryParse(rangeParts[1], out var end))
                     {
-                        // Felt-prefiks format: J01-X2:21-100
-                        prefix = withoutRange;
-                        var rangePart = cleanRef.Substring(cleanRef.LastIndexOf(':') + 1);
-                        var rangeParts = rangePart.Split('-');
-                        if (rangeParts.Length == 2 &&
-                            int.TryParse(rangeParts[0], out start) &&
-                            int.TryParse(rangeParts[1], out end))
-                        {
-                            RemoveBulkRangeMapping(prefix, start, end);
-                            return;
-                        }
-                    }
-                    else
-                    {
-                        // Standard format: X2:21-100
-                        var parts = cleanRef.Split(':');
-                        if (parts.Length == 2)
-                        {
-                            prefix = parts[0];
-                            var rangeParts = parts[1].Split('-');
-                            if (rangeParts.Length == 2 &&
-                                int.TryParse(rangeParts[0], out start) &&
-                                int.TryParse(rangeParts[1], out end))
-                            {
-                                RemoveBulkRangeMapping(prefix, start, end);
-                                return;
-                            }
-                        }
+                        RemoveBulkRangeMapping(prefix, start, end);
+                        return;
                     }
                 }
             }
 
-            // Vanlig mapping - fjern både base og starred variant
             bool hasStar = cleanRef.EndsWith("*");
             string baseRef = hasStar ? cleanRef.TrimEnd('*') : cleanRef;
             string starRef = hasStar ? cleanRef : cleanRef + "*";
