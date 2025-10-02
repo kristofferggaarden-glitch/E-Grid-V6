@@ -67,6 +67,7 @@ namespace WpfEGridApp
 
             var cleanRef = excelReference.Trim();
 
+            // 1. EKSAKT match først (høyest prioritet)
             if (_mappings.TryGetValue(cleanRef, out var mapping))
             {
                 return new ComponentMapping
@@ -78,6 +79,7 @@ namespace WpfEGridApp
                 };
             }
 
+            // 2. Best match logikk (prefix og contains)
             ComponentMapping bestMatch = null;
             int bestMatchLength = 0;
 
@@ -199,13 +201,16 @@ namespace WpfEGridApp
 
             _bulkRangeMappings.Add(bulk);
 
+            // Opprett EKSAKTE individuelle mappings for bulk (UTEN kolon på slutten)
             for (int i = startIndex; i <= endIndex; i++)
             {
+                // Eksakte referanser (uten og med stjerne)
                 string baseReference = $"{prefix}:{i}";
                 string starReference = $"{prefix}:{i}*";
 
                 var firstCell = selectedCells.First();
 
+                // Lagre som EKSAKTE keys (ikke med kolon på slutten)
                 _mappings[baseReference] = new ComponentMapping
                 {
                     ExcelReference = baseReference,
@@ -291,11 +296,17 @@ namespace WpfEGridApp
         {
             if (string.IsNullOrWhiteSpace(excelReference)) return null;
             var cleaned = excelReference.Trim().TrimEnd('*');
-            var parts = cleaned.Split(':');
-            if (parts.Length != 2) return null;
-            var prefix = parts[0];
-            var numPart = parts[1];
+
+            // Parser format: "J01-X2:21" eller "X2:21"
+            var lastColonIndex = cleaned.LastIndexOf(':');
+            if (lastColonIndex == -1) return null;
+
+            var prefix = cleaned.Substring(0, lastColonIndex);
+            var numPart = cleaned.Substring(lastColonIndex + 1);
+
             if (!int.TryParse(numPart, out var index)) return null;
+
+            // Sjekk om denne prefix+index finnes i noen bulk mapping
             return _bulkRangeMappings.FirstOrDefault(b =>
                 b.Prefix.Equals(prefix, StringComparison.OrdinalIgnoreCase) &&
                 index >= b.StartIndex && index <= b.EndIndex);
@@ -348,11 +359,13 @@ namespace WpfEGridApp
 
             if (cleanRef.Contains("-"))
             {
-                var parts = cleanRef.Split(':');
-                if (parts.Length == 2)
+                var lastColonIndex = cleanRef.LastIndexOf(':');
+                if (lastColonIndex != -1)
                 {
-                    var prefix = parts[0];
-                    var rangeParts = parts[1].Split('-');
+                    var prefix = cleanRef.Substring(0, lastColonIndex);
+                    var rangePart = cleanRef.Substring(lastColonIndex + 1);
+                    var rangeParts = rangePart.Split('-');
+
                     if (rangeParts.Length == 2 &&
                         int.TryParse(rangeParts[0], out var start) &&
                         int.TryParse(rangeParts[1], out var end))

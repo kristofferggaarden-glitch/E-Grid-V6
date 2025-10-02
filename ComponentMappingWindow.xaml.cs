@@ -264,12 +264,14 @@ namespace WpfEGridApp
                 return;
             }
 
-            var rangeRegex = new Regex(@"^([A-Za-z]+\d+):(\d+)(?:-(\d+))?$");
+            // Støtter felt-prefix: J01-X2:21-100, J04-X2:1-11, eller X2:21-100
+            var rangeRegex = new Regex(@"^([A-Za-z0-9\-]+):(\d+)(?:-(\d+))?$");
             var match = rangeRegex.Match(text);
+
             if (!match.Success)
             {
-                MessageBox.Show("Ugyldig format. Bruk f.eks. X2:21-100 eller X2:21", "Feil format",
-                                MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show("Ugyldig format.\n\nEksempler:\n• X2:21-100\n• J01-X2:21-100\n• J04-X2:1-11",
+                               "Feil format", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
@@ -491,12 +493,18 @@ namespace WpfEGridApp
 
             if (allMatches.Count == 0)
             {
-                var terminalMatches = Regex.Matches(cellValue, @"[A-Z]\d+:\d+");
+                // Match terminal blocks med eller uten felt-prefix
+                // Eksempler: J01-X2:21, X2:21, J04-F3:12
+                var terminalMatches = Regex.Matches(cellValue, @"[A-Z0-9\-]+:\d+");
                 foreach (Match match in terminalMatches)
                 {
                     var fullRef = match.Value;
-                    var baseRef = fullRef.Substring(0, fullRef.IndexOf(':') + 1);
-                    allMatches.Add(baseRef);
+                    var colonIndex = fullRef.IndexOf(':');
+                    if (colonIndex > 0)
+                    {
+                        var baseRef = fullRef.Substring(0, colonIndex + 1);
+                        allMatches.Add(baseRef);
+                    }
                 }
 
                 var simpleMatches = Regex.Matches(cellValue, @"[A-Z]\d+(?!:)");
