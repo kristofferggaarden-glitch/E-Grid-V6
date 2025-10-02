@@ -264,7 +264,6 @@ namespace WpfEGridApp
                 return;
             }
 
-            // Støtter felt-prefix: J01-X2:21-100, J04-X2:1-11, eller X2:21-100
             var rangeRegex = new Regex(@"^([A-Za-z0-9\-]+):(\d+)(?:-(\d+))?$");
             var match = rangeRegex.Match(text);
 
@@ -339,19 +338,16 @@ namespace WpfEGridApp
 
                     bool selectedIsTop = _mainWindow.BulkMappingSelectedIsTop;
 
-                    // Lagre bulk mapping
                     _mappingManager.AddBulkRangeMapping(prefix, startNumber, endNumber, cells, selectedIsTop);
 
                     FinishBulkMappingButton.Visibility = Visibility.Collapsed;
                     _isBulkMappingMode = false;
                     NewExcelReference.Clear();
 
-                    // Reload mappings
                     LoadExistingMappings();
 
                     int totalReferences = (endNumber - startNumber + 1) * 2;
 
-                    // Åpne vinduet igjen og sett fokus på tekstboks
                     this.WindowState = WindowState.Normal;
                     this.Activate();
                     NewExcelReference.Focus();
@@ -493,8 +489,6 @@ namespace WpfEGridApp
 
             if (allMatches.Count == 0)
             {
-                // Match terminal blocks med eller uten felt-prefix
-                // Eksempler: J01-X2:21, X2:21, J04-F3:12
                 var terminalMatches = Regex.Matches(cellValue, @"[A-Z0-9\-]+:\d+");
                 foreach (Match match in terminalMatches)
                 {

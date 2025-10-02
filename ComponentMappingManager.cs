@@ -37,19 +37,43 @@ namespace WpfEGridApp
             LoadBulkMappings();
         }
 
+        // Hjelpemetode: Sjekk om cleanRef matches mappingKey smart
+        private bool IsSmartMatch(string cleanRef, string mappingKey)
+        {
+            // Eksakt match først
+            if (cleanRef.Equals(mappingKey, StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            // Prefix match: mappingKey må ende med ":" og cleanRef må starte med den
+            if (mappingKey.EndsWith(":") && cleanRef.StartsWith(mappingKey, StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            // Contains match: MEN kun hvis cleanRef inneholder mappingKey som HELT ord/segment
+            // F.eks: "J03-F3:11" skal IKKE matche "J03-F3:1" 
+            // Men "J01-X1:1" skal matche "J01-X1" (hvis mappet som prefix)
+
+            // Unngå delstring-problem: Sjekk om det er et word boundary etter match
+            int index = cleanRef.IndexOf(mappingKey, StringComparison.OrdinalIgnoreCase);
+            if (index >= 0)
+            {
+                int endIndex = index + mappingKey.Length;
+                // Match er OK hvis:
+                // - Det er slutten av strengen, ELLER
+                // - Neste tegn er ikke et siffer (unngår "F3:1" matcher "F3:11")
+                if (endIndex >= cleanRef.Length || !char.IsDigit(cleanRef[endIndex]))
+                    return true;
+            }
+
+            return false;
+        }
+
         public bool HasMapping(string excelReference)
         {
             var cleanRef = excelReference.Trim();
 
-            if (_mappings.ContainsKey(cleanRef))
-                return true;
-
             foreach (var mappingKey in _mappings.Keys)
             {
-                if (mappingKey.EndsWith(":") && cleanRef.StartsWith(mappingKey))
-                    return true;
-
-                if (cleanRef.Contains(mappingKey, StringComparison.OrdinalIgnoreCase))
+                if (IsSmartMatch(cleanRef, mappingKey))
                     return true;
             }
 
@@ -79,7 +103,7 @@ namespace WpfEGridApp
                 };
             }
 
-            // 2. Best match logikk (prefix og contains)
+            // 2. Smart match logikk
             ComponentMapping bestMatch = null;
             int bestMatchLength = 0;
 
@@ -88,33 +112,16 @@ namespace WpfEGridApp
                 var mappingKey = kvp.Key;
                 var mappingValue = kvp.Value;
 
-                if (mappingKey.EndsWith(":") && cleanRef.StartsWith(mappingKey, StringComparison.OrdinalIgnoreCase))
+                if (IsSmartMatch(cleanRef, mappingKey) && mappingKey.Length > bestMatchLength)
                 {
-                    if (mappingKey.Length > bestMatchLength)
+                    bestMatch = new ComponentMapping
                     {
-                        bestMatch = new ComponentMapping
-                        {
-                            ExcelReference = mappingValue.ExcelReference,
-                            GridRow = mappingValue.GridRow,
-                            GridColumn = mappingValue.GridColumn,
-                            DefaultToBottom = mappingValue.DefaultToBottom
-                        };
-                        bestMatchLength = mappingKey.Length;
-                    }
-                }
-                else if (cleanRef.Contains(mappingKey, StringComparison.OrdinalIgnoreCase))
-                {
-                    if (mappingKey.Length > bestMatchLength)
-                    {
-                        bestMatch = new ComponentMapping
-                        {
-                            ExcelReference = mappingValue.ExcelReference,
-                            GridRow = mappingValue.GridRow,
-                            GridColumn = mappingValue.GridColumn,
-                            DefaultToBottom = mappingValue.DefaultToBottom
-                        };
-                        bestMatchLength = mappingKey.Length;
-                    }
+                        ExcelReference = mappingValue.ExcelReference,
+                        GridRow = mappingValue.GridRow,
+                        GridColumn = mappingValue.GridColumn,
+                        DefaultToBottom = mappingValue.DefaultToBottom
+                    };
+                    bestMatchLength = mappingKey.Length;
                 }
             }
 
@@ -201,16 +208,13 @@ namespace WpfEGridApp
 
             _bulkRangeMappings.Add(bulk);
 
-            // Opprett EKSAKTE individuelle mappings for bulk (UTEN kolon på slutten)
             for (int i = startIndex; i <= endIndex; i++)
             {
-                // Eksakte referanser (uten og med stjerne)
                 string baseReference = $"{prefix}:{i}";
                 string starReference = $"{prefix}:{i}*";
 
                 var firstCell = selectedCells.First();
 
-                // Lagre som EKSAKTE keys (ikke med kolon på slutten)
                 _mappings[baseReference] = new ComponentMapping
                 {
                     ExcelReference = baseReference,
@@ -297,7 +301,6 @@ namespace WpfEGridApp
             if (string.IsNullOrWhiteSpace(excelReference)) return null;
             var cleaned = excelReference.Trim().TrimEnd('*');
 
-            // Parser format: "J01-X2:21" eller "X2:21"
             var lastColonIndex = cleaned.LastIndexOf(':');
             if (lastColonIndex == -1) return null;
 
@@ -306,7 +309,6 @@ namespace WpfEGridApp
 
             if (!int.TryParse(numPart, out var index)) return null;
 
-            // Sjekk om denne prefix+index finnes i noen bulk mapping
             return _bulkRangeMappings.FirstOrDefault(b =>
                 b.Prefix.Equals(prefix, StringComparison.OrdinalIgnoreCase) &&
                 index >= b.StartIndex && index <= b.EndIndex);
@@ -398,11 +400,10 @@ namespace WpfEGridApp
 
             var cleanRef = reference.Trim();
 
-            if (_mappings.ContainsKey(cleanRef) ||
-                _mappings.Keys.Any(key => key.EndsWith(":") && cleanRef.StartsWith(key, StringComparison.OrdinalIgnoreCase)) ||
-                _mappings.Keys.Any(key => cleanRef.Contains(key, StringComparison.OrdinalIgnoreCase)))
+            foreach (var mappingKey in _mappings.Keys)
             {
-                return true;
+                if (IsSmartMatch(cleanRef, mappingKey))
+                    return true;
             }
 
             return GetBulkRangeMappingForReference(cleanRef) != null;
